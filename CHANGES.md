@@ -9,6 +9,18 @@
 
 **Driver protocol unchanged**: The `isDriver` auto-detection (job_title/role/app_role regex check) still auto-bypasses the gate in `openClockInDialog`, and the manual "I'm a driver" checkbox in `NoteRequiredDialog` still works via `waiveNoteShiftId`. No changes were made to either driver path.
 
+## Visit note query coverage fix + Data Maintenance tool (Base44 checkpoint f23e2800)
+
+**Files**:
+- `src/pages/MyShifts.jsx` — `visitNotes` query limit increased 100 → 500
+- `src/pages/SystemDiagnostics.jsx` — new "Data Maintenance" tab added
+
+**Bug**: The `visitNotes` query fetched only the last 100 notes globally. Under RLS, regular staff only see their own notes, but 100 could still be insufficient for staff with a long note history. Admins/managers (who see all notes) could have the top 100 entries be from other staff entirely, causing `hasVisitNote` to return false for notes that exist — incorrectly triggering the clock-in gate.
+
+**Fix**: Limit increased to 500. Under RLS this covers years of notes for a regular staff member and ensures notes from the most recent shifts are always included.
+
+**Data Maintenance tab**: Added to System Diagnostics (admin only). Provides a "Recalculate Retrospective Visit Notes" button that invokes `recalculateRetrospectiveVisitNotes` with full limits (1000 notes, 5000 shifts, 200 max updates) and displays a summary of any corrections made — allowing admins to fix any previously mislabelled `is_retrospective` values caused by the overnight shift bug.
+
 ## Retrospective visit note timeframe fix (Base44 checkpoint e99fdab3)
 
 **Files**:
