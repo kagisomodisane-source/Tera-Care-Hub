@@ -1,4 +1,10 @@
 
+## Remove download button from staff client document view (Base44 checkpoint 6a5ff454)
+
+**File**: `src/pages/MyClientDocuments.jsx`
+
+Removed the "Download" button from the uploaded documents card list and from the client document dialog. Staff can still open documents via "Open Document" (new tab) but cannot download them. Also removed the now-unused `Download` icon import.
+
 ## Uploaded client documents — acknowledgement flow added (Base44 checkpoint 6a5fdb2b)
 
 **File**: `src/pages/MyClientDocuments.jsx`
