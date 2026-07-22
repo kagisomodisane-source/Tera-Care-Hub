@@ -1,4 +1,12 @@
 
+## Shift revenue calculated on allocated time, not number of staff (Base44 checkpoint 6a614b593b98a28b09ac0ce6)
+
+**File**: `src/components/shifts/ShiftCalendarView.jsx` — `getShiftRevenue`
+
+**Bug**: For combined team shifts (multiple staff attending the same shift), `getShiftRevenue` summed each team member's individual revenue. A 4-hour shift at £20/hr with 3 staff was calculated as 3 × £80 = £240. The client is billed for the allocated time once — 4h × £20 = £80 — regardless of how many staff attend.
+
+**Fix**: The combined-team-shift branch now calculates revenue once using the first team member's shift data. All team members share the same `start_datetime`, `end_datetime`, `client_id`, and `hourly_rate`, so any single member gives the correct per-slot revenue. The payroll cost calculation (`getShiftPayrollCost`) is unchanged — it correctly sums costs across all members because staff labour is additive.
+
 ## Medication protocol bug fixes (Base44 checkpoint 6a60a3848385c0df65b2214e)
 
 **Files**:
