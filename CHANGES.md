@@ -1,4 +1,21 @@
 
+## Task workflow bug fixes (Base44 checkpoint 6a601a2366b25a6aae77a25d)
+
+**Files**:
+- `base44/functions/clearTaskNotifications/entry.ts`
+- `src/components/tasks/TaskCard.jsx`
+- `src/pages/TaskManagement.jsx`
+
+**Bugs fixed**:
+
+1. **`clearTaskNotifications` never cleared notifications** (`entry.ts`): The filter used 4 fields (`related_entity_type`, `related_entity_id`, `action_required`, `action_taken`) — Base44 compound filters silently return `[]` for multi-field queries, so no notifications were ever found or archived. Fixed to single-field `filter({ related_entity_id: task_id })` + JS chain to narrow by the remaining fields. Also replaced `updateMany` (which had the same multi-field filter bug) with `Promise.all` over individual `update()` calls by ID.
+
+2. **`TaskCard` crash on null `due_date`** (`TaskCard.jsx`): `format(parseISO(task.due_date), 'MMM d, yyyy')` threw when `due_date` was null or undefined (e.g. tasks created without a due date). Added null guard: renders `—` when `due_date` is absent.
+
+3. **`TaskCard` stale render on title/description change** (`TaskCard.jsx`): The `React.memo` custom comparator only checked `id`, `status`, `priority`, `due_date`, and `showActions`. Edits to `title` or `description` did not trigger a re-render — the card would display stale text. Added `title` and `description` to the comparator.
+
+4. **`handleDelete` blocking `confirm()` dialog** (`TaskManagement.jsx`): Used the native browser `confirm()`, which blocks the JS thread and has poor UX on mobile. Replaced with a controlled `AlertDialog` — shows the task name, stays open while the mutation is pending, and locks the Cancel button during the delete call.
+
 ## Remove download button from staff client document view (Base44 checkpoint 6a5ff454)
 
 **File**: `src/pages/MyClientDocuments.jsx`
