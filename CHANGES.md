@@ -1,4 +1,19 @@
 
+## Medication protocol bug fixes (Base44 checkpoint 6a60a3848385c0df65b2214e)
+
+**Files**:
+- `base44/functions/syncMedicationToMARSchedule/entry.ts`
+- `src/components/medications/MedicationAlertsMonitor.jsx`
+- `src/components/medications/OverdueMedicationsWidget.jsx`
+
+**Bugs fixed**:
+
+1. **MAR sync never ran** (`syncMedicationToMARSchedule/entry.ts`): Both the visit note and client were fetched with `.filter({ id: ... })` — a primary-key lookup via filter that Base44 silently returns `[]` for. The function always hit the "not found, skipping" early-exit, so medication administrations were never written back to the MAR schedule. Fixed to use `.get(id)` for both (consistent with the `freshClient` re-fetch already using `.get()` later in the same file).
+
+2. **Overdue medication alerts never re-fired after first day** (`MedicationAlertsMonitor.jsx`): The alert deduplication key was `clientId-medicationId-dueTime` — no date component. Once an alert fired for "08:00" for a given medication, the `alertedMedicationsRef` Set held that key for the lifetime of the session and suppressed every future alert for that same time slot, including on subsequent days. Added `yyyy-MM-dd` date to the key so each day's overdue alerts fire independently.
+
+3. **Overdue widget missed today's shifts and visit notes on busy systems** (`OverdueMedicationsWidget.jsx`): Shifts were fetched with `filter({}, '-created_date', 100)` — sorted by creation date, not shift date. On systems with >100 total shifts, today's shifts could be absent from the result. Visit notes had the same problem. Fixed both to use a single-field date filter (`shift_date` / `visit_date`) with a 200-record limit, returning exactly today's records regardless of overall record count.
+
 ## Task workflow bug fixes (Base44 checkpoint 6a601a2366b25a6aae77a25d)
 
 **Files**:
