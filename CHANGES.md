@@ -1,4 +1,23 @@
 
+## Timesheet bug fixes (Base44 checkpoint 6a62630e140479859b976212)
+
+**Files**:
+- `base44/functions/generateAITimesheet/entry.ts`
+- `src/pages/MyTimesheets.jsx`
+- `src/components/timesheets/AITimesheetCard.jsx`
+
+**Bugs fixed**:
+
+1. **Overtime threshold hardcoded at 40h** (`generateAITimesheet/entry.ts`): `total_regular_hours` was capped at 40 and everything above flagged as overtime — correct for a weekly pay period but catastrophically wrong for a monthly one (staff working a normal ~160h month would show ~120h overtime). Fixed to calculate the threshold proportionally from the pay period length: `Math.round((periodDays / 7) * 40)`.
+
+2. **Compound filter on shifts query silently returns `[]`** (`MyTimesheets.jsx`): The `shifts` query used `Shift.filter({ assigned_to: user.email, status: 'completed' })` — a 2-field compound filter that Base44 silently returns `[]` for. The "Included Shifts" section in the details dialog always showed nothing because `getShiftDetails()` always returned undefined. Fixed to single-field `filter({ assigned_to: user.email }, …, 500)` + JS `.filter(s => s.status === 'completed')`.
+
+3. **Blocking `confirm()` in Apply Correction flow** (`MyTimesheets.jsx`): `handleApplyCorrection` called the native `confirm()` dialog which blocks the JS thread. Replaced with a controlled `AlertDialog` (`showCorrectionDialog` + `pendingCorrectionData` state).
+
+4. **Blocking `window.confirm()` on critical-issue submit** (`MyTimesheets.jsx`, `AITimesheetCard.jsx`): Submitting a timesheet with critical discrepancies showed a native blocking confirm in both the card and the details dialog. Replaced with controlled `AlertDialog` components in both files (`showSubmitWarningDialog`/`pendingSubmitId` in the page; `showCriticalWarning` in the card).
+
+5. **Staff notes hidden on submitted timesheets** (`MyTimesheets.jsx`): The details dialog showed manual entry notes only when `status === 'draft'`. After a manual timesheet was submitted (status → `'submitted'`), the notes section disappeared. Changed condition to `!ai_verified` so notes are visible for all manually created timesheets regardless of submission status.
+
 ## Amitriptyline dosage data correction (Base44 checkpoint 6a61bc06b0d7963c8eb7f07f)
 
 **Data changes only — no code modified**
