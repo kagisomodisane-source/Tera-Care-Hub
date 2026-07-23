@@ -1,4 +1,20 @@
 
+## Amitriptyline dosage data correction (Base44 checkpoint 6a61bc06b0d7963c8eb7f07f)
+
+**Data changes only — no code modified**
+
+Joan Temple's Amitriptyline prescription was corrected from "2x 10mg" to "1x 10mg" across all records:
+
+1. **MAR schedule** (`Client` entity, id `695e92a6a5cc7ca197fe27f0`): `dosage` updated to "1x 10mg" and `stop_date` cleared (`null`) on the Amitriptyline entry (id `1784676068624`).
+
+2. **Visit note administration charts** (`VisitNote` entity): `medication_administration_chart` Amitriptyline `dosage` updated to "1x 10mg" in all 6 historical records:
+   - `6a5f51e5a6c0e6d8fcd2a2a1` (2026-07-21)
+   - `6a5f6a7d72b478980245de81` (2026-07-21)
+   - `6a5fa3ce616935a92bc1255a` (2026-07-21)
+   - `6a605d9abfbbec5246d43406` (2026-07-21)
+   - `6a60c698640968d5acf69c52` (2026-07-22)
+   - `6a60f5efa3ac0123446e2fb1` (2026-07-22)
+
 ## Shift revenue calculated on allocated time, not number of staff (Base44 checkpoint 6a614b593b98a28b09ac0ce6)
 
 **File**: `src/components/shifts/ShiftCalendarView.jsx` — `getShiftRevenue`
