@@ -1,4 +1,28 @@
 
+## Overdue medication alert: skip when no shift covers client/time (Base44 checkpoint 6a63a0c40aa92a10be4cffb3)
+
+**File**: `src/components/medications/MedicationAlertsMonitor.jsx`
+
+**Change**: Added a `todayShifts` query (filtered by `shift_date = today`) alongside the existing clients query. Before firing any overdue alert, a `hasLinkedShift(clientId, dueTime)` check confirms that at least one shift today matches the client and has a time window (±30 min buffer) that covers the medication's due time. If no such shift exists the alert is silently skipped. `todayShifts` added to the `useEffect` dependency array.
+
+## Global date format changed to dd-MM-yyyy + shift bulk bug fixes (Base44 checkpoint 93907cfba31e81e9726f6475b9d4bcb9c138a476)
+
+**Files changed**: 138 files across `src/` and `base44/functions/`
+
+**Changes**:
+
+1. **Date format** — All `format()` and `safeFormat()` call sites changed from US-style strings (`'MMM d, yyyy'`, `'MM/dd/yyyy'`, etc.) to `dd-MM-yyyy` style. `dateHelpers.jsx` FORMAT_MAP keys preserved as original US strings so any remaining `safeFormat()` callers are still remapped correctly.
+
+2. **BulkStatusDialog** (`src/components/shifts/BulkStatusDialog.jsx`): Added `useEffect` to reset `newStatus` to `""` each time the dialog opens, preventing stale selection on reopen.
+
+3. **BulkTimeDialog** (`src/components/shifts/BulkTimeDialog.jsx`): Added `useEffect` to reset `startTime`/`endTime` to `""` on each open.
+
+4. **BulkActionsBar** (`src/components/shifts/BulkActionsBar.jsx`): Removed `if (selectedCount === 0) return null` early return so the bar (including the cancel X) stays visible when nothing is selected yet. Action buttons individually disabled when `selectedCount === 0`.
+
+5. **ShiftManagement bulk reassign** (`src/pages/ShiftManagement.jsx`): Clears `bulkTeamMemberEmails` before opening the reassign dialog to prevent stale staff selections.
+
+6. **Timezone fix in bulkTimeMutation**: Replaced `.substring(0, 10)` (which returned the UTC date) with `format(new Date(isoString), 'yyyy-MM-dd')` to extract the local calendar date correctly in any timezone.
+
 ## Vehicle Handover visible in staff app (Base44 checkpoint 6a62e3c81d71b2d7e33b73af)
 
 **File**: `src/pages/MyMileageClaims.jsx`
