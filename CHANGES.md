@@ -1,4 +1,14 @@
 
+## Vehicle Handover enhancements (Base44 checkpoint 6a62d8c008e20bf7e29e4726)
+
+**File**: `src/components/mileage/VehicleHandoverLog.jsx` (rewritten, 641 lines)
+
+**Changes**:
+
+- **Auto-populate outgoing driver**: When "Record Handover" is clicked, `outgoing_driver_name` and `outgoing_driver_email` are pre-filled from the logged-in user's profile. Fields remain editable.
+- **Damage photo upload**: Added multi-image upload using `base44.integrations.Core.UploadFile`. Images are validated (image types only), shown as removable thumbnails in the form, and saved as `damage_image_urls[]` on the VehicleHandover entity.
+- **Image lightbox**: Uploaded photos display as clickable thumbnails (max 4 inline, overflow count badge) on each handover card. Clicking opens a full-size grid lightbox dialog. Each image links to its full URL for download/zooming.
+
 ## Vehicle Handover tab in Mileage Claim Approval (Base44 checkpoint 6a62d3b6b79bd21e35f4daee)
 
 **Files**:
