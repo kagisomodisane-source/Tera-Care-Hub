@@ -1,4 +1,19 @@
 
+## App Store readiness (Base44 checkpoint 6a62deb422d5e139d0bec7b2)
+
+**Files changed**:
+- `src/index.css`
+- `src/components/profile/DeleteAccountDangerZone.jsx`
+- `src/components/settings/DeleteAccountSettingsSection.jsx`
+
+**Changes**:
+
+1. **WebView CSS lockdown** (`src/index.css`): Added to `@layer base` — `overscroll-behavior: none` on `html, body` to prevent bounce/rubber-band in WKWebView; `-webkit-user-select: none; user-select: none; -webkit-touch-callout: none` on `button`, `[role="button"]`, Radix triggers, `[role="tab"]`, and `a` elements to disable long-press callouts and text selection on interactive UI.
+
+2. **Delete Account — Danger Zone** (`DeleteAccountDangerZone.jsx`): Converted from regular Dialog to AlertDialog. Replaced simple two-button confirmation with a type-gate: users must type the word `DELETE` (exact match) before the destructive button enables. Added a bulleted list of what gets deleted, a red warning that the action is irreversible, error handling around the backend call, and try/catch so the dialog stays open on failure. Calls `deleteUserAccount` function then `base44.auth.logout()`.
+
+3. **Delete Account — Settings** (`DeleteAccountSettingsSection.jsx`): Same type-gate upgrade applied. Added `DELETE`-confirmation input, expanded the warning with a bulleted data list, error handling with toast on failure, and the "Account Deletion" card now opens the AlertDialog directly from the card's own button (no AlertDialogTrigger wrapper needed). Same `deleteUserAccount` → `logout()` flow.
+
 ## Vehicle Handover enhancements (Base44 checkpoint 6a62d8c008e20bf7e29e4726)
 
 **File**: `src/components/mileage/VehicleHandoverLog.jsx` (rewritten, 641 lines)
