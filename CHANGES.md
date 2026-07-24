@@ -1,4 +1,10 @@
 
+## Vehicle Handover visible in staff app (Base44 checkpoint 6a62e3c81d71b2d7e33b73af)
+
+**File**: `src/pages/MyMileageClaims.jsx`
+
+**Fix**: Vehicle Handover was only accessible from `MileageApproval.jsx` (the manager page). Staff use `MyMileageClaims.jsx` which had no handover entry point. Added import of `VehicleHandoverLog`, a `showHandoverPanel` toggle state, a "Vehicle Handover" button in the header (matching the existing "Mileage log" toggle pattern), and `{showHandoverPanel && <VehicleHandoverLog user={user} />}` panel below the mileage log panel.
+
 ## App Store readiness (Base44 checkpoint 6a62deb422d5e139d0bec7b2)
 
 **Files changed**:
