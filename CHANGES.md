@@ -1,4 +1,22 @@
 
+## Visit note review: 5 bug fixes (Base44 checkpoint 6a63f68ab9045d74a57583dd)
+
+**Files changed**:
+- `src/pages/VisitNotes.jsx`
+- `src/components/hooks/useVisitNotesData.jsx`
+
+**Bugs fixed**:
+
+1. **Task fields not reset on dialog close** — `createTask`, `taskAssignee`, `taskDueDate`, `taskDescription`, `taskPriority` were not cleared by the Close button, causing stale values to bleed into the next note opened. All five fields now reset alongside the existing review fields.
+
+2. **`handleReview` called `auth.me()` on every review** — unnecessarily fetched the current user from the API on each review action instead of using the already-queried `user`. If the call failed (e.g., brief network loss), `reviewed_by` / `reviewed_by_name` would be undefined. Now uses the existing `user` query result directly.
+
+3. **`handleSaveToDrive` filename used the wrong date** — built the OneDrive filename from `device_created_at || created_date`, skipping `visit_date`. Now mirrors `handleDownloadPdf` by preferring `visit_date` first.
+
+4. **Inconsistent 24-hour auto-hide filter** — `VisitNotes.jsx` gated the filter on `(onedrive_synced_at || drive_synced_at)` while `useVisitNotesData.jsx` used `onedrive_file_id`, producing different visibility for the same notes depending on which hook loaded first. `useVisitNotesData.jsx` now uses the same `(onedrive_synced_at || drive_synced_at)` condition.
+
+5. **`visit_type.replace('_', ' ')` only replaced the first underscore** — changed to `replace(/_/g, ' ')` at all three display sites (pending card, reviewed card, review dialog header).
+
 ## OverdueMedicationsWidget: suppress when no shift covers the medication time (Base44 checkpoint 6a63e11922a921a469fc5da0)
 
 **File**: `src/components/medications/OverdueMedicationsWidget.jsx`
