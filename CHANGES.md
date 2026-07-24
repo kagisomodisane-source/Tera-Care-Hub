@@ -1,4 +1,10 @@
 
+## OverdueMedicationsWidget: suppress when no shift covers the medication time (Base44 checkpoint 6a63e11922a921a469fc5da0)
+
+**File**: `src/components/medications/OverdueMedicationsWidget.jsx`
+
+**Change**: Added `toMins` helper and `shiftCoversTime(clientId, dueTime)` function that finds all of a client's shifts for today and returns `true` only if the medication due time falls within any shift window (±30-minute buffer). The `overdue.push(...)` is now gated on `shiftCoversTime`, so medications whose due time isn't covered by a scheduled shift are silently excluded from the widget display. Mirrors the same guard already in `MedicationAlertsMonitor`.
+
 ## Overdue medication alert: skip when no shift covers client/time (Base44 checkpoint 6a63a0c40aa92a10be4cffb3)
 
 **File**: `src/components/medications/MedicationAlertsMonitor.jsx`
