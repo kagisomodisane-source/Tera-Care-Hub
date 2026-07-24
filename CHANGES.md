@@ -1,4 +1,22 @@
 
+## Vehicle Handover tab in Mileage Claim Approval (Base44 checkpoint 6a62d3b6b79bd21e35f4daee)
+
+**Files**:
+- `src/pages/MileageApproval.jsx` (updated)
+- `src/components/mileage/VehicleHandoverLog.jsx` (new component)
+- Base44 entity: `VehicleHandover` (new schema)
+
+**Changes**:
+
+- Added a new **Vehicle Handover** tab (3rd tab) to the Mileage Claim Approval page.
+- Created `VehicleHandover` entity with fields: `vehicle_registration`, `handover_date`, `handover_time`, `outgoing_driver_name`, `outgoing_driver_email`, `receiving_driver_name`, `receiving_driver_email`, `odometer_at_handover`, `vehicle_condition` (good/minor_damage/major_damage), `damage_notes`, `receiving_staff_confirmed`, `confirmed_at`, `recorded_by_email`, `recorded_by_name`.
+- `VehicleHandoverLog` component provides:
+  - Summary cards (total / awaiting confirmation / confirmed)
+  - Scrollable list of handover records showing both driver names, odometer reading, vehicle condition badge, and damage notes
+  - "Confirm Receipt" button on unconfirmed records (logs timestamp)
+  - "Record Handover" dialog form with outgoing driver, receiving driver, odometer, condition, and damage notes fields
+- `MileageApproval.jsx`: TabsList changed from `grid-cols-2` → `grid-cols-3`; new `TabsTrigger value="handover"` and `TabsContent` wired to `<VehicleHandoverLog user={user} />`.
+
 ## Timesheet bug fixes (Base44 checkpoint 6a62630e140479859b976212)
 
 **Files**:
