@@ -1,4 +1,24 @@
 
+## Backend: additional findings fixed (Base44 checkpoint 6a65412cc69ad47082ca1983)
+
+**Files changed**:
+- `base44/functions/clockShift/entry.ts`
+- `base44/functions/deleteUserAccount/entry.ts`
+- `base44/functions/workflowEngine/entry.ts`
+
+**Fix 1 — `clockShift`: false-positive short-clock flag for unscheduled shifts**
+`shortByPercent` defaulted to `true` when `scheduledMinutes` was null/falsy (no scheduled duration on the shift). Combined with `isShortClockOut = shortByMinutes && shortByPercent`, this meant any clock-out under 3 minutes on a shift without a scheduled duration was always flagged — even though the percent check was meaningless without a schedule. Changed default to `false` so only the fixed-minute threshold (`shortByMinutes`) fires when there is no scheduled duration.
+
+**Fix 2 — `deleteUserAccount`: three issues**
+1. *No audit log*: self-service deletion left no trace. An `AuditLog` entry with `severity: 'critical'` is now written before any deletion takes place.
+2. *Historical shifts deleted*: the original code deleted all `Shift` records for the user, including completed historical ones needed for payroll and audit compliance. Now only shifts with open/active statuses (`assigned`, `accepted`, `open_for_bidding`, `in_progress`, `decline_pending`, etc.) are deleted; completed, cancelled, voided, and needs_review shifts are preserved.
+3. *User entity not removed*: the function cleaned up related records but never deleted the `User` entity itself, so the account remained in the system. A final step now deletes the `User` record (after all other deletions to avoid orphaning data on partial failure).
+
+**Fix 3 — `workflowEngine`: client-side execution filtering**
+Two places loaded up to 200 `PolicyWorkflowExecution` records and filtered in JavaScript. Both now filter server-side:
+- `trigger` action: `filter({ policy_id, status: 'in_progress' }, ..., 10)` instead of `list(..., 200).filter(...)`
+- `get_execution` action: `filter({ policy_id }, ..., 50)` instead of `list(..., 200).filter(...)`
+
 ## Backend: NI crash fix + 26 role-check auth bugs (Base44 checkpoint 6a653f03fcb61b14535e9784)
 
 **Files changed** (backend functions):
