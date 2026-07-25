@@ -1,4 +1,20 @@
 
+## Mobile app: 3 bugs fixed (Base44 checkpoint 6a654b40d1ecabcf5ae4dea0)
+
+**Files changed**:
+- `src/components/pwa/OfflineDataSync.jsx`
+- `src/components/offline/useOfflineCareActions.jsx`
+- `src/components/offline/OfflineMedicationManager.jsx`
+
+**Fix 1 — `OfflineDataSync`: offline medication records silently discarded (critical data-loss bug)**
+`performSync()` called `markMedicationsSynced(medIds)` for ALL unsynced medications immediately after processing the sync queue — without actually pushing the medication data to the server. Any medication administered while offline (via `recordMedication` in `useOfflineCareActions`) was stored in IndexedDB's `MEDICATIONS` store, then silently marked as synced and discarded. The `useMedicationSync` hook that contains the actual server-sync logic is only mounted on the `CreateEditVisitNote` page and was never invoked by `OfflineDataSync`. Fixed by replacing the premature mark-as-synced block with inline sync logic: for each unsynced medication record, finds the matching visit note by `shift_id`, appends the medication entry (with duplicate check), updates the visit note on the server, then marks that record as synced. Records without a matching visit note remain pending (badge stays accurate) rather than being silently dropped.
+
+**Fix 2 — `useOfflineCareActions`: stale `isOnline` captures online state at render time**
+`isOnline` was computed once per render (`const isOnline = navigator.onLine`) and captured by `executeOrQueue` and `recordMedication` via `useCallback`. If the component did not re-render after going from offline to online, the callbacks would still see `isOnline = false` and route operations to the offline queue instead of executing them online. Fixed by moving the `navigator.onLine` read inside `executeOrQueue` (evaluated at call time) and inlining `!navigator.onLine` directly in `recordMedication`. Removed `isOnline` from both `useCallback` dependency arrays.
+
+**Fix 3 — `OfflineMedicationManager.saveMedicationRecordOffline`: unhandled DB errors**
+`getDB()` and `db.transaction()` calls had no error handling. If IndexedDB was unavailable, the function threw an unhandled exception that could crash callers (particularly `useOfflineCareActions.recordMedication`, which had no try-catch). Added the same `try { ... } catch { return null; }` guard pattern used consistently throughout `OfflineStorage.jsx`.
+
 ## Backend: additional findings fixed (Base44 checkpoint 6a65412cc69ad47082ca1983)
 
 **Files changed**:
