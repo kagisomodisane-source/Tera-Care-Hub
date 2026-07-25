@@ -1,4 +1,41 @@
 
+## Backend: NI crash fix + 26 role-check auth bugs (Base44 checkpoint 6a653f03fcb61b14535e9784)
+
+**Files changed** (backend functions):
+- `base44/functions/shared/payrollHelpers/entry.ts`
+- `base44/functions/bulkReassignShifts/entry.ts`
+- `base44/functions/reviewTimeCorrection/entry.ts`
+- `base44/functions/generatePayslip/entry.ts`
+- `base44/functions/generateManualPayslip/entry.ts`
+- `base44/functions/createBulkShifts/entry.ts`
+- `base44/functions/applyShiftCorrection/entry.ts`
+- `base44/functions/aiPolicyDraft/entry.ts`
+- `base44/functions/notifyShiftAssignment/entry.ts`
+- `base44/functions/generatePolicyTemplates/entry.ts`
+- `base44/functions/triggerWorkflow/entry.ts`
+- `base44/functions/broadcastSystemAlert/entry.ts`
+- `base44/functions/uploadToOneDrive/entry.ts`
+- `base44/functions/generatePolicyComplianceReport/entry.ts`
+- `base44/functions/createPolicyFromTemplate/entry.ts`
+- `base44/functions/updateFormSubmissionStatus/entry.ts`
+- `base44/functions/clearOldNotifications/entry.ts`
+- `base44/functions/optimizeDatabase/entry.ts`
+- `base44/functions/archiveOldVisitNotes/entry.ts`
+- `base44/functions/generateCQCInspectionReport/entry.ts`
+- `base44/functions/runSystemDiagnostics/entry.ts`
+- `base44/functions/notifyDocumentUpdates/entry.ts`
+- `base44/functions/generateInvoicePdf/entry.ts`
+- `base44/functions/archiveAllAppDataToOneDrive/entry.ts`
+- `base44/functions/oneDriveDocuments/entry.ts`
+- `base44/functions/manualOneDriveBackup/entry.ts`
+- `base44/functions/importShifts/entry.ts`
+
+**Bug 1 — NI TypeError crash in payrollHelpers** (`payrollHelpers/entry.ts`):
+`d.type.includes('NI')` would throw `TypeError: Cannot read properties of undefined` whenever a deduction breakdown entry had no `type` field. Fixed by adding optional chaining: `d.type?.includes('NI')`.
+
+**Bug 2 — Systemic auth bypass: 26 backend functions only checked `user.role` and ignored `user.app_role`**:
+Users whose role is stored in `user.app_role` (the canonical field per `authHelpers.ts`) but not in `user.role` were incorrectly denied access to admin/manager endpoints, while users with `user.role` set but not `user.app_role` received access they shouldn't. All 26 affected functions now check `user.app_role || user.role` (or equivalent `!includes(...)` pattern) consistent with `authHelpers.ts` and correctly-written functions like `disable2FA`, `handleShiftDecline`, and `resolveStaleShifts`.
+
 ## Visit note review: 5 bug fixes (Base44 checkpoint 6a63f68ab9045d74a57583dd)
 
 **Files changed**:
