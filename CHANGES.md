@@ -1,4 +1,26 @@
 
+## Master logout not working on mobile/staff (Base44 checkpoint 6a6551fca9a59e26395ec465)
+
+**File changed**: `src/Layout.jsx`
+
+**Root causes**:
+The `checkGlobalState` function (which compares the server's `master_logout_timestamp` against the locally stored value and triggers logout when they differ) was only called by:
+1. A one-shot timeout 10 seconds after login
+2. A 60-second `setInterval`
+3. The realtime WebSocket subscription (if the event was delivered)
+
+Neither a `visibilitychange` nor an `online` event triggered it. On mobile:
+- When the app is backgrounded, the WebSocket subscription may miss the event and JS timers are suspended
+- When the app comes back to the foreground there was no handler to run `checkGlobalState` immediately
+- When a device reconnects after sleep/network switch, the existing `goOnline` handler only refetched queries — it did not check for master logout
+- Staff/mobile users therefore had to wait up to 60 seconds (the next polling tick) for logout detection, and if the app never came back online within a polling window, logout would silently not fire
+
+**Fixes**:
+1. Added `visibilitychange` listener inside the `[user]` effect — calls `checkGlobalState()` immediately when `document.visibilityState === 'visible'` (app coming to foreground on mobile)
+2. Added `online` listener inside the same effect — calls `checkGlobalState()` immediately when the device reconnects, ensuring a master logout issued while the device was offline is enforced the moment connectivity is restored
+3. Reduced the initial delay from 10 s → 2 s — the original 10-second delay was intended to avoid interfering with dashboard queries at login; reduced to 2 s so an already-active master logout is detected within 2 seconds of login rather than 10
+4. Both listeners are correctly removed in the effect cleanup to prevent memory leaks on component unmount/user change
+
 ## Mobile app: 3 bugs fixed (Base44 checkpoint 6a654b40d1ecabcf5ae4dea0)
 
 **Files changed**:
