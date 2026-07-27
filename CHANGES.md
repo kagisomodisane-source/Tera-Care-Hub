@@ -1,4 +1,34 @@
 
+## Medication and MAR chart code audit — 2 bugs fixed
+
+### Files changed
+- `src/components/visit-notes/hooks/useMedicationSync.jsx`
+- `src/components/offline/OfflineMedicationManager.jsx`
+
+### Protocols documented
+
+**MAR schedule storage**: `client.mar_schedule[]` on the Client entity. Each entry: `{ id, medication_name, dosage, route, frequency, times (csv HH:MM), prescriber, start_date, stop_date, notes, is_prn, prn_indication, max_doses_per_day, administration_records[] }`. Administration records: `{ date (yyyy-MM-dd), time (HH:MM), administered (bool), administered_by, notes, prn_reason, recorded_at }`.
+
+**Visit-note MAR (in-shift recording)**: `VisitNote.medication_administration_chart[]` — entries added during a shift via `MedicationAdministrationTab`. Fields: `{ time, medication_name, dosage, route, administered, self_administered, administered_by, witnessed_by, notes, prn_reason, reason_not_given, timestamp }`.
+
+**Offline medication flow**:
+1. When offline, `useOfflineCareActions.recordMedication` calls `saveMedicationRecordOffline` → record written to `MEDICATIONS` IDB store (`synced: false`).
+2. On reconnect, `OfflineDataSync.performSync` (app-level) and `useMedicationSync.syncPendingMedications` (visit-note page) both read `getUnsyncedMedications()`, find the matching VisitNote by `shift_id`, append the entry to `medication_administration_chart`, call `VisitNote.update`, then call `markMedicationsSynced`.
+3. `OfflineIndicatorBanner` badge shows `getUnsyncedMedications().length`.
+
+**Status calculation** (`medicationStatusHelper.calculateMedicationStatus`): PRN → always `prn_available`. Scheduled → compares each scheduled time in `times` against current time; matches a record within ±120-minute window; unmatched past times that are >60 min overdue → `overdue`; ≤60 min → `due_now`; all matched → `given_today`. Retrospective notes (visitDate in past) use end-of-day as reference so all unrecorded times show as `not_recorded`.
+
+**Overdue alerts**: `MedicationAlertsMonitor` (background hook) runs `checkOverdueMedications` every 5 minutes; fires toast + optional push notification per alert key `{clientId}-{medId}-{dueTime}-{date}` (deduped in-memory per session). `OverdueMedicationsWidget` (dashboard) reconciles MAR schedule records with same-day visit note administrations to avoid false positives.
+
+### Bug 1 — `useMedicationSync.jsx` — data loss: medication marked synced without server write
+`syncedIds.push(record.id)` was positioned AFTER the `if (existingNotes.length > 0)` block, not inside it. When `shift_id` was set but no matching VisitNote was found (e.g., note not yet created), the record was pushed to `syncedIds` and subsequently marked as synced via `markMedicationsSynced` — no data was ever written to the server, but the IDB record was marked done. Fixed by moving the push inside the `if (existingNotes.length > 0)` block. Records without a matching note remain pending and retry on the next sync cycle.
+
+### Bug 2 — `OfflineMedicationManager.jsx` — six functions lack error handling on IDB calls
+`getUnsyncedMedications`, `markMedicationsSynced`, `cacheMARSchedule`, `getCachedMARSchedule`, `getClientMedicationCount`, and `cleanupSyncedMedications` all called `getDB()` and `db.transaction()` without try-catch. If IndexedDB is unavailable or throws (storage quota, private browsing restriction, browser bug), unhandled exceptions propagated to callers. Added the same `let db; try { db = await getDB(); } catch { return <default>; }` guard pattern used by `saveMedicationRecordOffline` and the rest of `OfflineStorage.jsx`.
+
+### Dead code identified (not removed — inform only)
+`src/components/offline/MedicationOfflineSync.jsx` exports `saveMedicationOffline`, `getPendingMedications`, `clearSyncedMedications`, `getOfflineMedicationCount` — none are imported anywhere in the codebase. The file implements a parallel offline storage path using the `CACHE` IDB store + `SYNC_QUEUE`, completely disconnected from the `MEDICATIONS` store that the actual sync logic reads. It is unreachable dead code.
+
 ## Service user details not saving — dialog stays open with stale data
 
 **File changed**: `src/pages/ClientProfile.jsx`
