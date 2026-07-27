@@ -1,4 +1,18 @@
 
+## Service user details not saving — dialog stays open with stale data
+
+**File changed**: `src/pages/ClientProfile.jsx`
+
+**Root causes**:
+
+1. **Dialog never closed after save** — `updateClientMutation.onSuccess` called `setIsEditing(false)` (which closes inline editing mode) but never called `setShowEditDialog(false)`. After clicking "Save Changes" in the `ClientEditDialog`, the dialog stayed open. Because the background refetch hadn't completed yet, the form still showed the pre-edit values. Users naturally concluded nothing was saved.
+
+2. **Stale data flash in read-only view** — For both the dialog path and the inline editing path (care plan, preferences), after `onSuccess` fired and switched the UI to read-only mode, the `client` object in the `clients` query cache was still the old value (the background refetch was in progress). The read-only fields rendered `client.field` and therefore displayed old values for 1–2 seconds before the refetch completed.
+
+**Fixes applied to `updateClientMutation.onSuccess`**:
+1. Added `queryClient.setQueryData(['clients'], ...)` before `invalidateQueries` — immediately patches the in-memory cache entry for this client with `{ ...c, ...data }` so all read-only views re-render instantly with the saved values, eliminating the stale data flash.
+2. Added `setShowEditDialog(false)` so the dialog closes automatically on a successful save, giving clear visual confirmation that the save completed.
+
 ## Master logout not working on mobile/staff (Base44 checkpoint 6a6551fca9a59e26395ec465)
 
 **File changed**: `src/Layout.jsx`
