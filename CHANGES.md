@@ -1,4 +1,20 @@
 
+## Overnight shifts: MAR chart anchored to shift start date (Base44 checkpoint 6a68c4e853a0056767c490be)
+
+**Bug**: On an overnight shift (e.g. 22:00 → 08:00), the MAR chart shown to staff surfaced medications due on the shift **end date** — i.e. the next morning's doses that belong to the following shift.
+
+**Root causes**:
+
+1. **`src/pages/CreateEditVisitNote.jsx` — `medicationStatusMap` lost its date anchor**: `visitDate` was resolved only from `allUserShifts.find(...)`. When the shift wasn't in that paginated list (common — it caps at ~50 per status), or when editing a note whose `selectedShift` couldn't be found, `visitDate` fell through to `null` and `calculateMedicationStatus` evaluated against `new Date()`. After midnight on an overnight shift, "now" is the shift end date, so the next day's morning medications showed as Due Now / Overdue — and, because the MAR chart is a mandatory section, they also blocked note submission.
+
+2. **`src/components/medications/OverdueMedicationsWidget.jsx` + `MedicationAlertsMonitor.jsx` — broken overnight windows**: `shiftCoversTime` / `hasLinkedShift` tested `dueMin >= start - 30 && dueMin <= end + 30`. For overnight shifts `end_time < start_time`, so the condition could never be true (the window was inverted).
+
+**Fixes**:
+
+1. `CreateEditVisitNote.jsx`: moved the `directShift` by-ID query above `medicationStatusMap` and added it as a fallback when the shift isn't in `allUserShifts`; `visitDate` now falls back through `shift_date → start_datetime → editingNote.visit_date` so the status calculation is always anchored to the shift **start date**. (`calculateMedicationStatus` already clamps to end-of-day of that date once the clock crosses midnight, so end-date medications can never surface.)
+
+2. `OverdueMedicationsWidget.jsx` / `MedicationAlertsMonitor.jsx`: when `end_time < start_time` (overnight), the shift now covers due times from `start − 30min` through midnight of the start date only — never the morning of the end date.
+
 ## Client data not saving — all partial Client.update() calls fixed (Base44 checkpoint 6a67fb98ef8f2e9af3579225)
 
 **Root cause**: `base44.entities.Client.update(id, data)` uses **HTTP PUT** (full replace), not PATCH. Sending partial data (e.g. `{ contact_persons: [...] }`) without the required fields (`full_name`, `date_of_birth`, `nhs_number`, `address`, `status`) causes a server-side validation failure and the update silently fails.
