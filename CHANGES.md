@@ -1,4 +1,37 @@
 
+## Client data not saving — all partial Client.update() calls fixed (Base44 checkpoint 6a67fb98ef8f2e9af3579225)
+
+**Root cause**: `base44.entities.Client.update(id, data)` uses **HTTP PUT** (full replace), not PATCH. Sending partial data (e.g. `{ contact_persons: [...] }`) without the required fields (`full_name`, `date_of_birth`, `nhs_number`, `address`, `status`) causes a server-side validation failure and the update silently fails.
+
+**Secondary issue**: `useEffect(() => { if (client) setEditedClient(client); }, [client])` had no `!isEditing` guard, so any concurrent mutation that updated the `clients` query cache immediately reset `editedClient` back to the server value, discarding in-progress form edits.
+
+**Files changed**:
+- `src/pages/ClientProfile.jsx`
+- `src/components/clients/VisitNoteConfigurator.jsx`
+- `src/components/clients/MARChart.jsx`
+- `src/components/forms/FormUploadAnalyzer.jsx`
+- `src/components/forms/FormRenderer.jsx`
+
+**Fixes**:
+
+1. **`ClientProfile.jsx` — `useEffect` race condition**: Added `!isEditing` guard and `isEditing` to the dependency array so the effect only resets `editedClient` from cache when the user is not actively editing.
+
+2. **`ClientProfile.jsx` — `ContactPersonsManager` `onChange`**: Changed `data: { contact_persons: contacts }` → `data: { ...client, contact_persons: contacts }` so the full client object is included in the PUT body.
+
+3. **`ClientProfile.jsx` — `StaffPreferencesManager` `onChange`**: Changed `data: { preferred_staff: prefs }` → `data: { ...client, preferred_staff: prefs }`.
+
+4. **`ClientProfile.jsx` — `RiskProfileManager` `onUpdate`**: Changed `data` (partial object from component) → `data: { ...client, ...data }`.
+
+5. **`ClientProfile.jsx` — `MARChart` `onUpdate`**: Changed `data` → `data: { ...client, ...data }`.
+
+6. **`VisitNoteConfigurator.jsx` — `updateConfigMutation`**: Changed `{ visit_note_config: config }` → `{ ...client, visit_note_config: config }`.
+
+7. **`MARChart.jsx` — `recordAdministrationMutation`**: Changed `{ mar_schedule: updatedMarSchedule }` → `{ ...client, mar_schedule: updatedMarSchedule }`.
+
+8. **`FormUploadAnalyzer.jsx`**: Before calling `Client.update(selectedClient, updateData)`, now looks up the full client from the `clients` prop (`clients.find(c => c.id === selectedClient) || {}`) and spreads it: `{ ...fullClient, ...updateData }`.
+
+9. **`FormRenderer.jsx`**: Before calling `Client.update(clientId, mappings)`, now fetches the full client with `Client.get(clientId)` and spreads it: `{ ...existingClient, ...mappings }`.
+
 ## Medication and MAR chart code audit — 2 bugs fixed
 
 ### Files changed
