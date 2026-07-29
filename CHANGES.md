@@ -1,4 +1,41 @@
 
+## Backend audit: 62 functions fixed (Base44 checkpoint 6a69572138781ba1c5b54dc4)
+
+Full audit of all 138 backend functions + 9 shared helpers found 6 critical, 35 high, 15 medium, 6 low findings. All fixed except the 5 redundancy findings (see note at end).
+
+### Critical — silently broken features
+
+1. **`generatePayslip`** — YTD query (`{staff_email, status:'issued'}`) and timesheet lookup (`{staff_email, pay_period_start, pay_period_end}`) were multi-field compound filters that silently return `[]`: YTD figures were always £0 and payslip generation always failed with "No approved timesheet found". Both converted to single-field filter + JS narrowing.
+2. **`generateMonthlyInvoices`** — completed-shifts query used a compound filter (always `[]` → zero invoices generated every month). Converted to `{status:'completed'}` + the existing JS date-range narrowing. Also: `bulkCreate` failures were swallowed by `.catch(console.error)` and the success count reported the *input* length; now failures are recorded in `results.errors` and `generated` reflects actual creations.
+3. **`trainingComplianceDailyCheck`** — compound filter meant expired training was never marked and renewal reminders never fired. Converted to single-field + JS; sort changed to ascending `expiry_date` so expired/soon-expiring records are always within the 1000-record window.
+4. **`archiveCompletedTasks`** — `updateMany` with a 3-field compound query never matched; replaced with single-field fetch + JS narrowing + per-record updates.
+5. **`workflowEngine`** — duplicate-execution guard used a compound filter (never fired → duplicate workflow executions under concurrent triggers). Converted to `{policy_id}` + JS `status==='in_progress'` filter.
+6. **`resetAnnualLeave`** — had **no authentication**; anyone could reset every user's leave balance. Added the dual-mode guard (admin required when a user session is present; unauthenticated scheduled automation still allowed) and bounded the `User.list()` call.
+
+### High — missing auth guards (5 functions)
+
+`contentScheduler`, `createInductionTrackers`, `policyReviewScheduler`, `sendTrainingReminders` got the dual-mode guard (admin/manager if authenticated, automation allowed). `scanClientConfigs` (exposes every client's `visit_note_config`) got a **hard** admin/manager gate.
+
+### High — role-check sweep (~28 functions, 51 individual patches)
+
+Systemic bug: role checks read only `user.role` **or** only `user.app_role`. Every check now tests **both fields explicitly** (`u.role === 'admin' || u.app_role === 'admin'`), which also fixes the subtler `(app_role || role)` short-circuit flaw in `uploadToOneDrive`, `createBulkShifts` and `importShifts` (a user with `app_role:'user'` + `role:'admin'` was wrongly blocked). Server-side `User.filter({role:'x'})` queries (which miss `app_role` users entirely) were converted to bounded `User.list()` + JS dual-field filters in: `admin2FAManagement`, `automatedCQCReminders`, `complianceReminderScheduler`, `cqcComplianceChecker`, `generateClientWeeklyReport`, `generatePolicyComplianceReport`, `generatePolicyTemplates`, `getStaffForecastingData`, `sendOnboardingReminders`, `updateFormSubmissionStatus`. Deny-guards fixed in the 9 `cleanup*`/scheduler/publisher functions; recipient filters fixed in `checkComplianceExpirations`, `criticalPushNotifications` (also 3× `User.filter({})` full-scans → `list()`), `executeFormAutomations` (8 sites), `notifyDocumentUpdates`, `notifyFormSubmission`, `placeShiftBid`, `runSystemDiagnostics`, `autoAssignManager`, `createPolicyAcknowledgements`, `createOnboardingTasks`, `cleanupNotificationBacklog`, `sendMondayMotivation` (+ bounded its unbounded `User.list()`), `generateVisitNotePdf`, `generateWeeklyReportPdf`. `importShifts` guard rewritten in positive form (users with no role set are now rejected).
+
+### Medium — 20 `.filter({id})` lookups → `.get()` (15 functions)
+
+`applyShiftCorrection`, `autoAssignManager`, `backupVisitNoteToOneDrive` (×2), `chatWebSocket`, `clockShift` (×2), `createPolicyFromTemplate`, `expressShiftSwapInterest` (×2), `generateTrainingCertificate`, `generateWeeklyReportPdf`, `getClientInfoForShift` (×5), `getLocationResidents`, `reviewTimeCorrection`, `routeFormSubmission`, `validateFormSubmission`. All preserve the caller's array shape via `.then(r => r ? [r] : [])`. Also: `getLocationResidents`' compound `Resident.filter({client_location_id, status})` (residents list was always empty) → single-field + JS status filter; `autoSyncPayrollToQuickBooks`/`syncPayrollToQuickBooks` `Payslip.filter({})` → `Payslip.list()`; `createBulkShifts` now uses `asServiceRole` for the bulk create; `validateShiftIntegrity` now allows unauthenticated entity-event/automation invocations (admin still required when a user session is present), so integrity validation actually runs from events.
+
+### Low
+
+- PII/log leakage: removed 7 `console.log` lines printing staff emails, client names, and OneDrive URLs from `backupVisitNoteToOneDrive`, `handleShiftDecline`, `savePushSubscription`, `uploadToOneDrive`.
+- `generateInvoicePdf`: `addLogo()` was called with no URL (silent no-op — invoices rendered unbranded); now passes the Tera Healthcare logo URL.
+- `importShifts`: unbounded `Client.list()` → bounded.
+
+### Redundancy findings — intentionally NOT changed
+
+5 functions inline copies of `shared/` helpers (`generateCarePlanPdf`, `generateRiskAssessmentPdf`, `notifyDocumentUpdates`, `sendMondayMotivation`, `sendUrgentFormNotification`). Investigation showed **no backend function imports from `shared/` at all** — Base44 deploys each function directory in isolation, so converting inline code to cross-directory imports would likely break deployment. The `shared/` directory itself appears to be dead code in this deployment model. Left as-is.
+
+All 62 modified files verified with esbuild parse checks.
+
 ## Overnight shifts: MAR chart anchored to shift start date (Base44 checkpoint 6a68c4e853a0056767c490be)
 
 **Bug**: On an overnight shift (e.g. 22:00 → 08:00), the MAR chart shown to staff surfaced medications due on the shift **end date** — i.e. the next morning's doses that belong to the following shift.
