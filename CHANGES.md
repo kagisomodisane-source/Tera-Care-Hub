@@ -1,4 +1,18 @@
 
+## Save Changes fix: system fields stripped from Client.update payloads (Base44 checkpoint 6a697eba2194dacf2bcb3df1)
+
+**Problem**: The "Save Changes" flow (and every other client update path) sent the full client object — including Base44 server-managed fields (`id`, `created_date`, `updated_date`, `created_by`, `is_sample`, …) — in the `Client.update()` PUT body, which can fail server-side validation and reject the whole save.
+
+**Fix**:
+- New helper `src/components/utils/entityUpdateHelpers.jsx` exporting `stripSystemFields(data)` — removes server-managed fields from an update payload.
+- Applied at every `Client.update()` call path:
+  - `src/pages/ClientProfile.jsx` — `updateClientMutation.mutationFn` now strips system fields; `handleSaveCarePlan` also merges `{ ...client, ...editedClient }` so a stale/partial `editedClient` can never erase fields.
+  - `src/pages/Clients.jsx` — mutationFn strips system fields.
+  - `src/pages/ClientOnboardingWizard.jsx` — mutationFn strips system fields.
+  - `src/components/clients/VisitNoteConfigurator.jsx`, `src/components/clients/MARChart.jsx`, `src/components/forms/FormRenderer.jsx`, `src/components/forms/FormUploadAnalyzer.jsx` — full-object spreads now wrapped in `stripSystemFields(...)`.
+
+Verified with a full `vite build` (exit 0).
+
 ## Backend audit: 62 functions fixed (Base44 checkpoint 6a69572138781ba1c5b54dc4)
 
 Full audit of all 138 backend functions + 9 shared helpers found 6 critical, 35 high, 15 medium, 6 low findings. All fixed except the 5 redundancy findings (see note at end).
