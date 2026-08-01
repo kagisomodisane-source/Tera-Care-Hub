@@ -1,4 +1,23 @@
 
+## My Task workflow: 12 bug fixes (Base44 checkpoint 6a6e7fef2f8a3644c68e4d22)
+
+**Files changed**: `src/pages/MyTasks.jsx`, `src/pages/TaskManagement.jsx`, `src/components/tasks/my-tasks/MyTaskWorkflowCard.jsx`, `src/components/tasks/ClientTasksPanel.jsx`, `src/components/tasks/OfflineTaskManager.jsx`, `src/components/tasks/TaskCompleteDialog.jsx`, `src/components/offline/SyncQueueProcessor.jsx`
+
+1. **CRITICAL — offline Start/Complete corrupted data**: MyTasks mutations passed `{ taskId }` instead of `{ id, data }` to `useOfflineAwareMutation`, which derives create-vs-update from `variables.id`. Offline actions were queued as **creates** with `{taskId, feedback}` as the whole payload — on reconnect, `Task.create()` produced a junk record while the real task stayed incomplete, and the optimistic cache showed a junk temp task. Both mutations now use the `{ id, data }` shape; the completion payload is built at the call site.
+2. **No assignee notification on manual task creation**: only AI-generated tasks (analyzeVisitNote) notified staff. `TaskManagement` and `ClientTasksPanel` create mutations now create a `task_assigned` notification for the assignee (wrapped in try/catch so notification failure can't fail task creation; Notification RLS allows the admin/manager creators).
+3. **`ClientTasksPanel` "New Task" button**: gate now checks `app_role` as well as `role`.
+4. **Offline completion replay never cleared assigner notifications**: `SyncQueueProcessor` now invokes `clearTaskNotifications` after replaying a Task update whose payload has `status: 'completed'`.
+5. **`ClientTasksPanel` overdue count included tasks due today**: `new Date(due_date) < new Date()` compared against midnight; now uses date-string comparison excluding today (consistent with MyTasks).
+6. **`ClientTasksPanel` native `confirm()` on delete**: replaced with a controlled AlertDialog (same pattern as TaskManagement).
+7. **`OfflineTaskManager`**: badge no longer resets to 0 when sync items failed (recounts from the queue); overlapping-sync guard moved to a ref because the `online` listener captures the first-render closure.
+8. **`MyTaskWorkflowCard` crash on malformed due_date**: `format(parseISO(...))` now guarded with `isValid()`; `getDueMeta` in MyTasks also treats invalid dates as "no due date" instead of producing NaN labels.
+9. **Per-card busy state**: Start/Complete buttons now disable only on the task being mutated instead of every card.
+10. **Task fetch limit raised 100 → 300** so staff with large task lists don't silently lose the furthest-out tasks.
+11. **Notification-click highlight** now reads the router's `location.search` (was `window.location.search`) and re-runs when the URL changes.
+12. **`completed_date` format unified**: `TaskCompleteDialog` now writes ISO datetime like the MyTasks flow (was date-only), so completion timestamps are consistent for reporting/archiving.
+
+Verified with a full `vite build` (exit 0).
+
 ## Save Changes fix: system fields stripped from Client.update payloads (Base44 checkpoint 6a697eba2194dacf2bcb3df1)
 
 **Problem**: The "Save Changes" flow (and every other client update path) sent the full client object — including Base44 server-managed fields (`id`, `created_date`, `updated_date`, `created_by`, `is_sample`, …) — in the `Client.update()` PUT body, which can fail server-side validation and reject the whole save.
