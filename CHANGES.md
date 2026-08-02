@@ -1,4 +1,25 @@
 
+## Training Hub: admin course management (Base44 checkpoint 6a6f8e47cc9647da7f5f8cd9)
+
+Admins can now add, relabel, archive and delete the training courses that form the columns of the training matrix. Previously the matrix was read-only — courses could only be changed by editing `Training` entity records directly.
+
+**Files changed**: `src/components/training/CourseManagerDialog.jsx` (new, 371 lines), `src/pages/TrainingHub.jsx`, `base44/entities/Training.jsonc`
+
+**New component — `CourseManagerDialog`**:
+- Lists every course (active and archived) with its category, validity period, mandatory flag, and a count of how many staff records reference it.
+- **Add**: create a course with name, category, validity period (days, drives automatic expiry calculation), mandatory flag and description.
+- **Relabel**: rename a course inline. Because `TrainingAssignment` stores a denormalized `training_title`, a rename offers to **cascade to existing staff records** (checkbox, on by default, showing the affected record count) so alerts, certificates and exports show the new name. Matrix cells continue to match by `training_id`, so history is never orphaned by a rename.
+- **Archive / Restore**: sets `status` to `archived`, which removes the column from the matrix while preserving all staff records — the safe default for compliance history. Archived courses can be restored.
+- **Delete**: permanent removal behind an AlertDialog that names the course and warns how many staff records reference it, explicitly recommending Archive instead when records exist.
+- Duplicate course names are rejected; the course name is required.
+- Uses `stripSystemFields` on updates since `Training.update()` is a PUT (full replace).
+
+**`TrainingHub.jsx`**: added an `isAdminUser` predicate (course CRUD is admin-only per the entity's RLS, distinct from the existing manager-level `isManagerUser`), a lazy-loaded "Manage Courses" button in the Training Matrix tab header shown only to admins, and a hint in the matrix description. All course mutations invalidate the `["trainingHub"]` query key so the matrix updates immediately.
+
+**`Training.jsonc` RLS**: create/update/delete previously required `role: "admin"` only, so an admin whose role lives in `app_role` would have been rejected by the server. Widened to `role: "admin"` **or** `app_role in ["super_admin", "admin"]`, consistent with the dual-role convention applied across the backend. Read access is unchanged (`true`).
+
+Verified with a full `vite build` (exit 0) and a JSON validity check on the entity file.
+
 ## Shift Management mobile: 9 fixes (Base44 checkpoint 6a6e99c00a1516838e2f7c23)
 
 **Files changed**: `tailwind.config.js`, `src/pages/ShiftManagement.jsx`, `src/components/shifts/BulkActionsBar.jsx`, `src/components/shifts/ShiftListView.jsx`, `src/components/shifts/ShiftCalendarView.jsx`
