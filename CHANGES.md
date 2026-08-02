@@ -1,4 +1,20 @@
 
+## Shift Management mobile: 9 fixes (Base44 checkpoint 6a6e99c00a1516838e2f7c23)
+
+**Files changed**: `tailwind.config.js`, `src/pages/ShiftManagement.jsx`, `src/components/shifts/BulkActionsBar.jsx`, `src/components/shifts/ShiftListView.jsx`, `src/components/shifts/ShiftCalendarView.jsx`
+
+1. **Missing `xs` breakpoint (HIGH)**: `tailwind.config.js` defined no `xs` screen, so every `xs:` class silently no-opped at all widths — the header button rendered as just "Shift" (never "Create Shift"), calendar day headers showed single letters ("M T W…") even on desktop, and the filter grid never went 2-column. Added `screens: { xs: '475px' }`; verified the breakpoint lands in the compiled CSS.
+2. **Clock-time override accepted clock-out before clock-in (HIGH)**: added a submit-time validation toast, a mutation-level guard (`throw` on non-positive duration so bad data can never persist), a red "Clock out must be after clock in" panel replacing the negative-hours preview, and the Save button disables while times are invalid.
+3. **Bulk actions bar stranded at top (MEDIUM)**: on <lg screens the bar is now `fixed` just above the bottom tab bar (with safe-area offset), so Reassign/Status/Times/Delete stay reachable while scrolling a long selection list; unchanged in-flow on desktop.
+4. **Heavy render + aggressive refetching (MEDIUM)**: all five queries used `staleTime: 0` — now `STALE_TIME.SHORT` (2 min) for user+shifts and `STALE_TIME.LONG` (10 min) for clients/staff/locations. `ShiftListView` now renders 50 cards initially with a "Load more (+100)" button instead of up to 1,000 at once.
+5. **Same-day shifts unordered (MEDIUM)**: the sort key stripped the time; now includes `start_time` (fallback: ISO time portion) so shifts within a day sort chronologically.
+6. **Calendar drag-and-drop vs touch (MEDIUM)**: drag is disabled for coarse pointers (`pointer: coarse`) — long-press-drag no longer fights pan-scrolling on the 700px-wide grid; tap-to-edit and tap-day-to-create still work.
+7. **`h-13` TabsList class doesn't exist** → `h-12`.
+8. **Filters had no expand cue on desktop**: `showFilters` now defaults open on ≥768px screens, collapsed on phones.
+9. **Dead markup removed**: double-`hidden` header subtitle and the empty admin-only filter footer block.
+
+Verified with a full `vite build` (exit 0).
+
 ## My Task workflow: 12 bug fixes (Base44 checkpoint 6a6e7fef2f8a3644c68e4d22)
 
 **Files changed**: `src/pages/MyTasks.jsx`, `src/pages/TaskManagement.jsx`, `src/components/tasks/my-tasks/MyTaskWorkflowCard.jsx`, `src/components/tasks/ClientTasksPanel.jsx`, `src/components/tasks/OfflineTaskManager.jsx`, `src/components/tasks/TaskCompleteDialog.jsx`, `src/components/offline/SyncQueueProcessor.jsx`
