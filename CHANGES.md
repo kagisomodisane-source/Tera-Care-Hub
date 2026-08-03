@@ -1,4 +1,29 @@
 
+## AI still allocating tasks while disabled — dead settings toggle (Base44 checkpoint 6a703ec0bdd2378a08109412)
+
+**Reported symptom**: AI assignment was switched off, but AI kept creating and assigning tasks to staff.
+
+**Root cause**: `AIAssignmentSettingsPanel` writes an `AppSettings` record under the key `task_ai_assignment_settings`, but a codebase-wide search found that key referenced in **exactly one file — the panel that writes it**. Nothing ever read it. Every control on that panel was write-only; the "Enable AI assignment" toggle was purely decorative.
+
+Meanwhile `base44/functions/analyzeVisitNote/entry.ts` — invoked on every visit note submission from `useVisitNoteSubmit` — created AI tasks unconditionally and assigned them to `task.assigned_to_email || note.created_by`, then notified the assignee.
+
+**Confirmed against live data**: the settings record has `enabled: false`, last modified 2026-06-11 by the admin. Yet all 15 most recent Task records were `assigned_by_name: "AI Analysis"`, `assigned_by_email: "system"`, tagged `ai_generated` — the newest created 2026-08-03 06:44, roughly seven weeks after AI was disabled.
+
+**Files changed**: `base44/functions/analyzeVisitNote/entry.ts`, `src/components/tasks/AIAssignmentSettingsPanel.jsx`
+
+**Fixes**:
+
+1. **`analyzeVisitNote` now reads the setting** before doing any task work and skips AI task creation entirely when `enabled !== true`. AI *analysis* of the note (summary, risks, flags, sentiment, care-plan suggestion) still runs and still writes to the visit note — only task creation/allocation is gated.
+2. **Staff-entered follow-up actions are deliberately unaffected.** The `note.follow_up_actions` loop creates tasks from what the care worker typed into the visit note form; that is not AI output, so disabling AI does not silently break follow-ups.
+3. **`require_manager_approval` (also previously dead) is now honoured.** When AI assignment is enabled and approval is required (the default), AI tasks are created **unassigned** and tagged `awaiting_approval`, and managers receive a `review_required` notification telling them how many tasks need allocating — instead of AI pushing work straight onto staff.
+4. **Response payload is now honest**: returns `ai_assignment_enabled` and `ai_tasks_skipped` alongside `tasks_created`.
+5. **Panel admin gate** used `user?.role === "admin"` in two places (query `enabled` and the render guard), so an admin whose role lives in `app_role` could not see or edit these settings. Now checks both fields, consistent with the backend role sweep.
+6. **Panel copy no longer misleads**: the header explains what the current state actually does (including that staff-entered follow-ups still create tasks), and the scoring-rules block carries an explicit notice that those weightings are stored for a future staff-matching engine and do not affect task creation — only the two toggles above are active.
+
+**Not changed (flagged for a decision)**: `confidence_threshold`, `max_active_tasks_per_staff`, `balance_workload`, `prefer_client_familiarity`, `respect_staff_skills`, `avoid_overdue_staff` and the four scoring weights remain stored-but-inert — there is no staff-matching engine behind them. They are now labelled as such in the UI rather than removed, so existing saved configuration is preserved.
+
+Verified with an esbuild parse of the backend function and a full `vite build` (exit 0).
+
 ## Training Hub: admin course management (Base44 checkpoint 6a6f8e47cc9647da7f5f8cd9)
 
 Admins can now add, relabel, archive and delete the training courses that form the columns of the training matrix. Previously the matrix was read-only — courses could only be changed by editing `Training` entity records directly.
