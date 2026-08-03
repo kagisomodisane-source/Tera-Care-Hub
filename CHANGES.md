@@ -1,4 +1,43 @@
 
+## AI task backlog cleanup + staff-matching assignment engine (Base44 checkpoint 6a7047eb173bd8bf8a9dec07)
+
+Follow-on from the dead-toggle fix: clears the backlog those runaway AI tasks left behind, and makes the previously inert scoring settings actually drive assignment.
+
+**New files**: `base44/functions/cleanupAiTaskBacklog/entry.ts`, `base44/functions/suggestTaskAssignee/entry.ts`
+**Files changed**: `base44/functions/analyzeVisitNote/entry.ts`, `src/components/tasks/TaskDialog.jsx`, `src/pages/TaskManagement.jsx`
+
+### 1. Backlog cleanup (`cleanupAiTaskBacklog` + admin card in Task Management)
+
+A direct bulk database edit of the ~1,000+ affected records was blocked by the platform's safety classifier, so this shipped as a permissioned in-app tool instead — which is repeatable and auditable rather than a one-off external mutation.
+
+- Admin-only (dual-field role check). Defaults to `dry_run: true` so nothing changes without an explicit second call.
+- Targets only **pending** tasks that are AI-generated (`assigned_by_name === 'AI Analysis'`, `assigned_by_email === 'system'`, or tagged `ai_generated`). In-progress and completed work is never touched.
+- Marks them `cancelled` + `is_archived` with `archive_reason: 'ai_backlog_cleanup'` rather than deleting, preserving the audit trail.
+- Also archives the matching `task_assigned` notifications so staff inboxes clear too.
+- Writes an `AuditLog` entry recording who ran it and how many records changed.
+- Batched at 400 per run with a `has_more` flag; the UI loops until the backlog is drained, showing running progress.
+- **UI**: an amber "AI task backlog" card in Task Management (admins only) — **Scan** previews the count and per-staff breakdown, then **Clear N** opens a confirmation explaining exactly what will happen before anything is written.
+
+### 2. Staff-matching engine (`suggestTaskAssignee`)
+
+Every previously-inert setting on the AI Assignment panel now drives real scoring. For a given task the engine ranks staff on four weighted signals, with the weights normalised from `priority_weight` / `skill_weight` / `workload_weight` / `continuity_weight`:
+
+- **Skill** (`respect_staff_skills`) — completed, unexpired `TrainingAssignment` records whose titles match the task's category keywords or significant words from its title/description.
+- **Workload** (`balance_workload`) — count of the staff member's active (pending + in progress) tasks; staff at or above `max_active_tasks_per_staff` are marked ineligible rather than merely down-ranked.
+- **Continuity** (`prefer_client_familiarity`) — number of prior shifts that staff member has had with the task's client.
+- **Priority fit** — urgent/high tasks favour staff with genuine spare capacity, factoring in overdue work.
+- **`avoid_overdue_staff`** applies a graduated penalty per overdue task.
+- **`confidence_threshold`** gates auto-assignment: below it, the engine returns no `auto_assign` and the task is left for a human.
+
+Each suggestion returns a confidence score plus human-readable reasons ("3 previous visits with this client", "No active tasks", "At capacity (5/5 active tasks)") so the decision is explainable rather than a black box.
+
+### 3. Wiring
+
+- **`analyzeVisitNote`** now calls the engine per AI task when assignment is enabled *and* manager approval is off. If no candidate clears the confidence threshold, the task is created unassigned and tagged `awaiting_approval` instead of defaulting to the note's author (the old behaviour, which is what dumped work on whoever happened to write the note). Auto-assigned tasks are tagged `ai_assigned`.
+- **`TaskDialog`** gained a **Suggest** button next to "Assign To" for manual task creation — shows the top 3 ranked staff with confidence and reasons; click to apply. Ineligible (at-capacity) staff are shown greyed out with the reason rather than hidden.
+
+Verified with esbuild parses of all three backend functions and a full `vite build` (exit 0).
+
 ## AI still allocating tasks while disabled — dead settings toggle (Base44 checkpoint 6a703ec0bdd2378a08109412)
 
 **Reported symptom**: AI assignment was switched off, but AI kept creating and assigning tasks to staff.
