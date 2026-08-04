@@ -1,4 +1,29 @@
 
+## Dashboard: live MAR chart from the Overdue Medications widget (Base44 checkpoint 6a71ac00e1730222630b9307)
+
+The dashboard widget previously surfaced only *overdue* medications, and vanished entirely when everything was on track — so there was no way to see the current medication picture at a glance. Admins and managers can now open a live MAR chart from it.
+
+**New file**: `src/components/medications/MarChartLiveDialog.jsx` (207 lines)
+**Changed**: `src/components/medications/OverdueMedicationsWidget.jsx`
+
+**What the view shows** — every active medication for every client with a visit scheduled today, grouped by client:
+- Medication, dose, route, and scheduled times (or "As needed" for PRN, with the indication)
+- Live status badge: Given / Overdue / Due now / PRN / Not due
+- **Today's administrations**, merged from both sources — the client's `mar_schedule.administration_records` *and* today's visit-note `medication_administration_chart` entries — each showing time, who gave it, and which source it came from
+- A note when an outstanding dose isn't covered by any shift today (the same suppression rule the alerts use), so a manager can see *why* something isn't being flagged
+- Search across client/medication/dose/route, plus All / Outstanding / Given / PRN filters with counts
+- "Updated HH:mm:ss" timestamp and a manual Refresh button; the underlying query already refetches every 60s
+
+**Widget changes**:
+- The query now also builds a `marRecords` array covering **all** active medications including PRN (previously PRN was skipped early and never evaluated).
+- A "View MAR chart" button appears in both widget states — the red overdue card *and* the green "Medications On Track" card — so the record is reachable even when nothing is outstanding.
+- Gated with `isUserManager` (admin, super_admin or manager); staff see the widget exactly as before with no button.
+- The dialog is lazy-loaded, so the dashboard bundle is unaffected for users who never open it.
+
+**Overdue logic deliberately untouched**: PRN records are added to the live view but still `return` before the `hasAllocatedMedications` flag and the overdue push, and the shift-coverage gate (including the overnight-shift fix) is unchanged — verified by inspection after patching. The widget still hides itself entirely when a client has no allocated medications.
+
+Verified with a full `vite build` (exit 0).
+
 ## Backend dead code cleanup — 12 removals (Base44 checkpoint 6a71903ea07483f6d7f28128)
 
 Scanned all 149 backend functions for dead and redundant code. **Full reversal log with every removed byte: [`BACKEND_CLEANUP_LOG.md`](./BACKEND_CLEANUP_LOG.md).**
