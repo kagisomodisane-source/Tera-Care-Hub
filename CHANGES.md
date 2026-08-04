@@ -1,4 +1,21 @@
 
+## Admin tool: remove superseded visit note drafts (Base44 checkpoint 6a72769f3701f79acfd6ecc9)
+
+Retroactive companion to the duplicate-visit-note fix. That fix stops *new* duplicates; this removes ones already in the data.
+
+**New file**: `base44/functions/cleanupSupersededVisitNoteDrafts/entry.ts`
+**Changed**: `src/pages/VisitNotes.jsx`
+
+- Admin-gated (`isUserAdmin`), `dry_run: true` by default — nothing is deleted without an explicit second call.
+- A draft is only eligible when a **non-draft note exists for the same shift**. Drafts with no finalised counterpart are genuine unfinished work and are explicitly reported as kept, never deleted.
+- The preview lists each candidate with client, visit date and how many seconds separated the draft from its finalised note — making the offline double-create signature visible.
+- Deletions are recorded in `AuditLog` with the operator, count and affected draft ids.
+- **UI**: a subtle "Scan for duplicates" strip at the top of Visit Notes Review; after scanning it shows what would be removed and what would be kept, with a confirmation dialog before anything is deleted.
+
+**Verification of the one live duplicate** (shift `6a42645b952885a2a62ec3dc`, Joan Temple, 2026-08-04): draft `6a721dd17d8f38a447f7a6fe` versus finalised `6a721dd1fe2745f6ead443b5`. Field-by-field comparison showed the draft is a strict subset — identical medication administration chart (4 medications), times, mood, wellbeing status and next-visit focus; the finalised note additionally carries the AI summary. The draft's only unique content is the auto-generated placeholder `"(Draft in progress)"` in observations. Safe to delete; no clinical content is lost.
+
+**Note on execution**: the MCP toolset exposes create/update/query for records but no delete, and the sandbox holds no service credentials, so the record could not be removed directly from here — hence shipping it as an in-app tool that runs under the operator's own admin session.
+
 ## Duplicate visit notes: drafts submitted alongside the final note (Base44 checkpoint 6a7272a9fd766cb1d0dca08c)
 
 **Reported symptom**: in-progress drafts were being submitted in addition to the final note, so review showed two copies of the same visit.
