@@ -1,4 +1,21 @@
 
+## Backend dead code cleanup — 12 removals (Base44 checkpoint 6a71903ea07483f6d7f28128)
+
+Scanned all 149 backend functions for dead and redundant code. **Full reversal log with every removed byte: [`BACKEND_CLEANUP_LOG.md`](./BACKEND_CLEANUP_LOG.md).**
+
+**Removed (~84 lines):**
+- 1 unused import (`contentScheduler`: `format` from date-fns, 0 uses)
+- 3 unused constants (`LOGO_URL` ×2, `MAX_MY_SHIFTS`)
+- 5 unused functions (`blobToBase64` ×2, `formatDate`, `formatDateTime` ×2)
+- 2 inline copies of `sendNotificationsWithPreferences` replaced with the shared helper
+- 1 dev artifact: the `pdfProbe` function — a scratch endpoint that generated a "Hello probe" PDF and uploaded it as service role **with no auth check**, referenced nowhere, pinned to different SDK versions than the rest of the backend
+
+**Safety approach**: every removed symbol was verified to have exactly one occurrence in its file (the definition) before deletion. `formatDate` in `generateTrainingCertificate` was deliberately kept — it is used there; only the identically-named unused copy in `generateFormPdf` was removed. All 149 functions re-parsed with esbuild afterwards (0 failures).
+
+**Deliberately NOT removed**: 50 functions have no code reference anywhere, but these are cron/webhook/entity-event functions (`resetAnnualLeave`, `trainingComplianceDailyCheck`, `archiveCompletedTasks`, `notifyNewChatMessage`, `validateShiftIntegrity`, …) whose triggers live in Base44 config rather than code. "Unreferenced" is not "unused" — none were deleted. `notifyDocumentUpdates`' local `buildDocumentUpdateNotifications` duplicates a shared helper but is actively called with a differing signature, so it was left for a separate verified change.
+
+**Correction to the earlier backend audit**: that audit reported "no backend function imports from `shared/`". That was wrong — 6 functions import `../shared/authHelpers/entry.ts`, so cross-directory imports work fine in Base44. Two of the five redundancy findings from that audit are also now stale: `generateCarePlanPdf` and `generateRiskAssessmentPdf` no longer inline the markdown-PDF helpers.
+
 ## AI task backlog cleanup + staff-matching assignment engine (Base44 checkpoint 6a7047eb173bd8bf8a9dec07)
 
 Follow-on from the dead-toggle fix: clears the backlog those runaway AI tasks left behind, and makes the previously inert scoring settings actually drive assignment.
