@@ -1,4 +1,29 @@
 
+## Duplicate visit notes: drafts submitted alongside the final note (Base44 checkpoint 6a7272a9fd766cb1d0dca08c)
+
+**Reported symptom**: in-progress drafts were being submitted in addition to the final note, so review showed two copies of the same visit.
+
+**Confirmed in live data**: shift `6a42645b952885a2a62ec3dc` (Joan Temple, 2026-08-04) had note `6a721dd17d8f38a447f7a6fe` (`status: draft`) and `6a721dd1fe2745f6ead443b5` (`status: active`) created **37 milliseconds apart** — the signature of a sync queue replaying two separately-queued creates, not of a user acting twice.
+
+**Root cause** — three compounding gaps:
+
+1. **No draft lookup by shift.** `CreateEditVisitNote` only adopted an existing note when opened with `?noteId=`. Staff reach it via `?shiftId=` (from MyShifts / MyVisitNotes), so `editingNote` stayed `null` even when a draft for that shift already existed on the server — and submitting created a second note.
+2. **The offline path never learns the draft's id.** `saveDraftMutation` runs through `useOfflineAwareMutation`; when offline it throws `OFFLINE_QUEUED`, so `onSuccess` → `onDraftSaved` never fires and `editingNote` is never set. Save-then-submit while offline therefore enqueues **two creates**, which the queue replays back-to-back. This is what the live data shows.
+3. **Drafts were never filtered out of review.** `VisitNotes.jsx` and `useVisitNotesData.jsx` both did `VisitNote.list('-created_date', 1000)` with no status filter, so a draft appeared in the review queue as though it were a submitted note.
+
+**Files changed**: `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/hooks/useVisitNoteSubmit.jsx`, `src/components/offline/SyncQueueProcessor.jsx`, `src/pages/VisitNotes.jsx`, `src/components/hooks/useVisitNotesData.jsx`
+
+**Fixes**:
+
+1. **Resume existing drafts.** A `shiftVisitNotes` query looks up notes for the selected shift; if one is the current user's draft it is adopted into `editingNote` and the form is populated from it, with a "Resumed your saved draft for this visit" toast. Guarded by a ref so it happens once and can't clobber in-session edits.
+2. **Safety net at submit.** Before creating, `handleSubmit` re-checks for an existing draft for the shift and finalizes that instead — covering cases where the lookup hadn't resolved or the draft arrived via a different route.
+3. **Superseded drafts are removed.** New exported `removeSupersededDrafts(shiftId, keepNoteId)` deletes any *other* draft for the same shift once a note is finalised. Wired into all three creation paths: the online create, the `_finalizeDraft` update, and — critically — `SyncQueueProcessor`, which creates records directly and bypasses the mutation hooks entirely (the path that produced the live duplicate). Deleting is safe here: a draft was never submitted, and the note replacing it holds the complete content.
+4. **Drafts excluded from review.** Both manager-facing lists now filter out `status === 'draft'`. Staff keep access to their own drafts via MyVisitNotes to resume them.
+
+**Existing duplicates are not auto-cleaned** — see the note below on the one live pair found.
+
+Verified with a full `vite build` (exit 0).
+
 ## Dashboard: live MAR chart from the Overdue Medications widget (Base44 checkpoint 6a71ac00e1730222630b9307)
 
 The dashboard widget previously surfaced only *overdue* medications, and vanished entirely when everything was on track — so there was no way to see the current medication picture at a glance. Admins and managers can now open a live MAR chart from it.
