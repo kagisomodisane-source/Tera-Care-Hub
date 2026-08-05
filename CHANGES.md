@@ -1,4 +1,37 @@
 
+## Robust pull-to-refresh for mobile (Base44 checkpoint 6a72a61537c9204b85d08ed3)
+
+`PullToRefresh` was rewritten and extended to every mobile page. Previously it existed only on the four primary tabs and `MyShifts`.
+
+**Files changed**: `src/components/ui/PullToRefresh.jsx` (rewritten, 263 lines), `src/components/layout/BottomTabsContainer.jsx`, `src/Layout.jsx`
+
+### Defects in the previous implementation
+
+1. **Listeners re-bound on every frame of a drag.** `handleTouchEnd` depended on the live `pullDistance` state, so the effect tore down and re-attached all three touch listeners on every pixel of movement — dozens of times per second, risking dropped events mid-gesture.
+2. **A React re-render per touch frame**, with the indicator's height animating layout (not transform) — the cause of the jank.
+3. **No direction detection.** Any downward component triggered a pull, so horizontal swipes and diagonal flicks fought the gesture — including over horizontally scrollable tables.
+4. **Only the bound element's `scrollTop` was checked**, so pulling inside a scrolled nested list could still trigger a refresh.
+5. **The spinner never tracked the actual refresh.** `onRefresh` dispatched a `CustomEvent`; Layout's listener called `handleRefresh()` without returning its promise, so the await resolved immediately and the spinner stopped before any data arrived.
+6. No multi-touch guard (pinch-zoom entered the pull path), no `touchcancel` handler (a system-cancelled gesture left `pulling` stuck true), no timeout if `onRefresh` hung, and no minimum spinner time so fast refreshes flashed.
+
+### The rewrite
+
+- **Listeners bound once.** All gesture state lives in refs; `onRefresh`, `threshold`, `maxPull` and `disabled` are mirrored into refs so prop changes never re-bind.
+- **Zero React renders while dragging.** Movement is written directly to the DOM inside `requestAnimationFrame` using `translate3d` (GPU-composited, no layout). Only the coarse phase — idle → pulling → armed → refreshing — is state.
+- **Direction arbitration.** A 6px noise floor, then the gesture is claimed only if it is downward *and* at least 1.5× more vertical than horizontal; otherwise it is handed back to the page for the rest of the touch.
+- **Correct scroll origin.** Walks up from the touch target to the nearest genuinely scrollable ancestor and requires both it and the page to be at the top.
+- **Asymptotic damping** (`maxPull * (1 - e^(-dy/maxPull))`) for native-feeling resistance that can never exceed the cap.
+- **Guards**: ignores multi-touch, handles `touchcancel`, aborts if content scrolls away mid-gesture, refuses to fire while a modal/sheet is open (`data-scroll-locked` or an open Radix dialog), and only runs on coarse pointers so a mouse drag never triggers it.
+- **Honest spinner**: awaits the real refetch promise, with a 450ms minimum (no flash) and a 12s timeout (never stuck).
+- **Feedback**: haptic tick on crossing the threshold, plus a pill indicator that reads "Pull to refresh" → "Release to refresh" (arrow flips) → "Refreshing…".
+
+### Coverage
+
+- `BottomTabsContainer` now calls `queryClient.refetchQueries({ type: 'active' })` directly and returns the promise, so the spinner reflects real completion.
+- `Layout` wraps the non-tab branch too, so **every** mobile page gets pull-to-refresh — visit notes, compliance, training, profile and the rest — not just the four primary tabs. Disabled on chat routes, where the view manages its own scroll.
+
+Verified with a full `vite build` (exit 0).
+
 ## Admin tool: remove superseded visit note drafts (Base44 checkpoint 6a72769f3701f79acfd6ecc9)
 
 Retroactive companion to the duplicate-visit-note fix. That fix stops *new* duplicates; this removes ones already in the data.
