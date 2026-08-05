@@ -1,4 +1,20 @@
 
+## Bottom tab bar missing on Messages (Base44 checkpoint 6a73b4df2ce7d40d8f951c46)
+
+**Files changed**: `src/Layout.jsx`, `src/pages/Chat.jsx`
+
+The Messages list rendered with no bottom tab bar, leaving it a dead end.
+
+**Cause**: `PRIMARY_TAB_PATTERNS` in `Layout.jsx` — the list deciding whether the tabbed shell renders at all — did not include `'Chat'`. On `/Chat`, `isPrimaryTabRoute` was false, so Layout took the plain non-tab branch and `BottomTabsContainer` (and with it `BottomTabs`) was never mounted. The tab bar's own Messages tab navigates to `/Chat`, i.e. straight to a route where the tab bar ceases to exist.
+
+This is why the earlier chat-visibility work didn't resolve it: that change made the bar hide only while a conversation is open, but on this route the bar was never rendered in the first place, so there was nothing to hide or show.
+
+**Fix**: added `'Chat'` to `PRIMARY_TAB_PATTERNS`. Verified this causes no double mount — `getTabFromPath` already maps `Chat` → `messages` and `isExactMainTab` already matches `Chat`, so the page renders once inside the messages `TabPanel` and the routed `children` branch is skipped. The conversation-open behaviour now works as designed: bar visible on the list, hidden while a conversation is full-screen.
+
+Also replaced the chat list's hard-coded `calc(100dvh-121px-…)` height with `calc(100dvh-65px-var(--bottom-tabs-h,52px)-…)`, so it tracks the measured bar height instead of the earlier 56px guess.
+
+Verified with a full `vite build` (exit 0).
+
 ## Shift Management performance (Base44 checkpoint 6a732c776b6940739e84a47c)
 
 **Files changed**: `src/components/shifts/ShiftListView.jsx`, `src/pages/ShiftManagement.jsx`
