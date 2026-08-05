@@ -1,4 +1,30 @@
 
+## Blank strip above the bottom tab bar (Base44 checkpoint 6a72b2cb546a2e0553952b12)
+
+**Reported symptom**: pages didn't reach the tab bar — a strip of blank space sat just above the bottom stack.
+
+**Cause**: bottom spacing was being applied at four different levels and stacking, and pages were also taller than the area they render into.
+
+**Files changed**: `src/components/layout/BottomTabsContainer.jsx`, 21 pages, 1 component (bottom padding); 48 pages (`min-h-screen`).
+
+### 1. Bottom padding counted three times
+
+The tab-bar clearance is owned by `BottomTabsContainer` (`56px + safe-area`). On top of that, 22 pages carried their own `pb-24` (96px) — a manual workaround that predates the container reservation — and `<main>` adds the safe-area inset as well. A phone with a home indicator was therefore reserving roughly `56 + 34 + 96 + 34 ≈ 220px` for a 90px bar.
+
+- Removed the redundant `pb-24` / `pb-20` from 21 pages and 1 component, leaving a normal `pb-6`.
+- **`CreateEditVisitNote` deliberately kept its larger padding** — it has its own `fixed bottom-0` action bar and genuinely needs the clearance.
+- The container no longer re-adds the safe-area inset, since `<main>` already applies it — that alone was ~34px of dead space on modern iPhones.
+
+### 2. The reservation was applied on desktop too
+
+`BottomTabs` is `lg:hidden`, but the container's `paddingBottom` was an inline style with no breakpoint, so every desktop page also reserved 56px for a bar that isn't rendered. Converted to a class with `lg:pb-0`.
+
+### 3. Pages were taller than their container
+
+48 pages used `min-h-screen` (100vh). They render inside `<main>`, which already reserves 65px for the fixed header and sits above the tab bar — so a 100vh page overflows its container by roughly `header + tab bar` (~121px), producing scrollable empty space beneath the content. Switched to `min-h-full`, which fills the available area exactly. Verified every route renders through `LayoutWrapper` → `Layout`, so `min-h-full` always resolves against a sized parent.
+
+Verified with a full `vite build` (exit 0).
+
 ## Native tab behaviour and chat visibility (Base44 checkpoint 6a72ac6cd7d64fee498f496e)
 
 **Files changed**: `src/components/layout/BottomTabsContainer.jsx`, `src/components/layout/BottomTabs.jsx`, `src/pages/Chat.jsx`
