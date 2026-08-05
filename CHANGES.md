@@ -1,4 +1,16 @@
 
+## Staff dashboard top gap (Base44 checkpoint 6a72b931c1a430cbbf62ceef)
+
+**File changed**: `src/pages/StaffDashboard.jsx`
+
+The two dashboards were spaced differently at the top. The admin `Dashboard` root sets an explicit `pt-0`, sitting flush beneath the app header. `StaffDashboard` instead had `py-4 mt-6` — 16px padding plus a 24px margin, so **40px of dead space** above the content on mobile. The `mt-6` applied at every breakpoint too, so the gap survived even where `sm:pt-0` / `md:pt-0` zeroed the padding.
+
+Changed `px-4 py-4 mt-6` → `px-4 pt-0 pb-4`, matching the admin dashboard: flush at the top, normal bottom padding, no trailing margin. (This also completes the previous fix — `mt-6` was what remained after `my-6` was halved to remove the bottom strip.)
+
+Confirmed `ImpersonationBanner`, the page's first child, returns `null` when inactive, so it contributes no space. `StaffDashboard` was the only page root carrying a top margin.
+
+Verified with a full `vite build` (exit 0).
+
 ## Dashboard blank strip — follow-up (Base44 checkpoint 6a72b6dfaf971106ee67e61e)
 
 The previous pass removed the stacked page padding, but a strip remained on the mobile dashboard. Two residual causes:
