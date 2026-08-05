@@ -1,4 +1,32 @@
 
+## Sync Status page: 10 bug fixes (Base44 checkpoint 6a72be6c2aee00c7ec791a6a)
+
+`SyncStatus.jsx` is a re-export of `SyncManagement.jsx`. Scanned that page plus `SyncCategoryCard`, `SyncQueueProcessor`, `OfflineStorage` and `OfflineMedicationManager`.
+
+**New file**: `src/components/offline/syncPendingMedications.jsx`
+**Files changed**: `src/pages/SyncManagement.jsx`, `src/components/pwa/OfflineDataSync.jsx`
+
+### High
+
+1. **Medications were counted as pending but could not be synced.** `totalPending` included unsynced medications, so the page read "N items waiting to sync" — but "Sync All" only rendered when queue items existed, and the Medications card was passed `canSync={false}`, hiding its button. With only medications pending there was **no action anywhere on the page**. The cause was that the medication sync logic lived inline inside `OfflineDataSync.performSync` and was never exported. Extracted to `syncPendingMedications()` and wired to the card; `OfflineDataSync` now calls the same helper (55 duplicated lines removed). Records without a visit note still stay pending, so counts remain honest.
+2. **One IndexedDB error froze the page silently.** `getMetadata()` rejects on a request error and sat unguarded inside `Promise.all`, so a single transient failure aborted the whole load — counts stopped updating while the 5s poll kept re-throwing. Every call is now individually guarded, with a retryable error banner instead of silence.
+3. **"Clear Queue" could fail with no feedback.** It permanently discards unsynced care data, yet had no try/catch while `clearSyncQueue()` rejects on error — a failure skipped the success toast and did nothing else. Now wrapped with error reporting, and both clear actions use an `AlertDialog` (spelling out exactly what is lost) instead of a blocking native `confirm()`.
+
+### Medium
+
+4. **`queryClient.invalidateQueries()` with no arguments** in three places invalidated every query in the app. Replaced with a scoped `SYNC_AFFECTED_KEYS` refresh.
+5. **The 5-second poll never paused** — it now stops while `document.hidden` and refreshes immediately on return.
+6. **The progress dialog's 2s auto-hide timer survived unmount.** Held in a ref and cleared.
+
+### Low
+
+7. **The progress bar was not progress** — `100 - (pending × 10)`, floored at 5, pinned at 5% from ten items up and never moved during a sync. Now shows 100% when clear and real `current/total` progress while syncing, and is hidden otherwise rather than displaying a meaningless value.
+8. **Refreshing Medications** invalidated `['clients','clientLocations']`, unrelated to local pending records; it now re-reads local storage too.
+9. **Toast label** rendered "visitNotes" as "visit Notes" — replaced the regex with a `CATEGORY_LABELS` map.
+10. **The "Other" card** had `isRefreshing={false}` hard-coded so it never showed a spinner.
+
+Verified with 16 targeted assertions plus a full `vite build` (exit 0).
+
 ## Staff dashboard top gap (Base44 checkpoint 6a72b931c1a430cbbf62ceef)
 
 **File changed**: `src/pages/StaffDashboard.jsx`
