@@ -1,4 +1,16 @@
 
+## Dashboard blank strip — follow-up (Base44 checkpoint 6a72b6dfaf971106ee67e61e)
+
+The previous pass removed the stacked page padding, but a strip remained on the mobile dashboard. Two residual causes:
+
+**Files changed**: `src/components/layout/BottomTabs.jsx`, `src/components/layout/BottomTabsContainer.jsx`, `src/pages/StaffDashboard.jsx`
+
+1. **The reservation was a guessed number.** The shell reserved a hard-coded `56px`, but the bar's actual content is ~45px tall (each button is `minHeight: 44px` inside a `py-0` nav) — leaving roughly 11px of permanent gap. Replacing one magic number with another would just move the problem, so `BottomTabs` now measures itself with a `ResizeObserver` and publishes the result as a `--bottom-tabs-h` CSS variable; the container reserves `var(--bottom-tabs-h, 52px)`. It measures the `<nav>` rather than the outer element deliberately: the outer div carries the safe-area padding, and `<main>` already contributes that inset, so measuring the nav avoids reintroducing the double-count. The variable resets to `0px` on unmount, and the reservation stays `lg:pb-0`.
+
+2. **`StaffDashboard` had `my-6`** — a 24px margin *below* the page, stacking on top of the bar reservation. Changed to `mt-6`, keeping the intended spacing above while dropping the trailing gap (`py-4` already provides internal padding).
+
+Verified with a full `vite build` (exit 0).
+
 ## Blank strip above the bottom tab bar (Base44 checkpoint 6a72b2cb546a2e0553952b12)
 
 **Reported symptom**: pages didn't reach the tab bar — a strip of blank space sat just above the bottom stack.
