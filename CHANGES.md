@@ -1,4 +1,34 @@
 
+## Shift Management performance (Base44 checkpoint 6a732c776b6940739e84a47c)
+
+**Files changed**: `src/components/shifts/ShiftListView.jsx`, `src/pages/ShiftManagement.jsx`
+
+Measured first rather than guessed: jsPDF (382K) was already lazily imported and the drag-and-drop library sits in the shared main bundle, so the lag was **runtime**, not download weight. Two things dominated.
+
+### 1. `ShiftCard`'s memoization never worked
+
+`ShiftCard` is wrapped in `React.memo`, but the page passed it an inline arrow for `onEdit` and two plain (non-memoized) functions for `onDelete` / `onTimeOverride`. All three got new identities on every render, so the shallow prop comparison always failed and **every visible card re-rendered on every keystroke** in the search box, every filter change and every selection toggle.
+
+- `handleEditShift` and `handleToggleBiddingForShift` added as `useCallback`s; `handleDeleteClick` and `handleOpenTimeOverride` wrapped in `useCallback`.
+- Result: typing in search now re-renders the input, not 50 shift cards.
+
+### 2. Every card did linear scans over all reference data
+
+`ShiftListView` builds `clientsMap` / `staffMap` / `clientLocationsMap` for O(1) lookups — but only passed them for *team* shifts. Single shifts (the overwhelming majority) received the raw arrays, and `ShiftCard` falls back to `.find()` on an array. With 50 rendered cards against 500 clients, 200 staff and 500 locations that is roughly **60,000 comparisons per render**.
+
+- Both branches now receive the Maps.
+- `selectedShiftIds.includes(id)` per card replaced with a memoized `Set.has()`, and `renderItem` now depends on that Set rather than the array.
+
+### 3. Chunk splitting
+
+The calendar, bidding view and all five bulk components were imported eagerly even though the list is the default tab and bulk mode is off by default. They are now `React.lazy` with Suspense boundaries, and the four bulk dialogs only mount once opened (rendering them unconditionally would have defeated the lazy import).
+
+**ShiftManagement chunk: 95K → 63K (−34%)**, with `ShiftCalendarView` (19K), `ShiftBiddingView` (5K) and the bulk components (12.5K) deferred until actually used.
+
+Earlier passes on this page also moved five queries off `staleTime: 0` and capped the list at 50 cards with a "Load more" control.
+
+Verified with targeted assertions and a full `vite build` (exit 0).
+
 ## Sync Status page: 10 bug fixes (Base44 checkpoint 6a72be6c2aee00c7ec791a6a)
 
 `SyncStatus.jsx` is a re-export of `SyncManagement.jsx`. Scanned that page plus `SyncCategoryCard`, `SyncQueueProcessor`, `OfflineStorage` and `OfflineMedicationManager`.
