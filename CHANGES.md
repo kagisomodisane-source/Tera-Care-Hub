@@ -1,4 +1,26 @@
 
+## Native tab behaviour and chat visibility (Base44 checkpoint 6a72ac6cd7d64fee498f496e)
+
+**Files changed**: `src/components/layout/BottomTabsContainer.jsx`, `src/components/layout/BottomTabs.jsx`, `src/pages/Chat.jsx`
+
+### Chat visibility — the tab bar disappeared for the whole Messages tab
+
+`{activeTab !== "messages" && <BottomTabs .../>}` hid the bottom bar for the entire Messages tab, including the conversation **list**. Opening Messages stranded the user: the only way back to Dashboard, Shifts or Tasks was a system back gesture. Native messaging apps keep the tab bar on the list and hide it only while a conversation is full-screen.
+
+- `Chat` now publishes its state via a `wellstride:chat-conversation` event alongside the existing `chat-fullscreen` body class, emitting `{ open: false }` on unmount so the bar can never be left hidden.
+- The container listens and hides the bar **only while a conversation is open**, so Messages is no longer a dead end.
+- The panel's bottom padding is keyed to the same condition rather than to `activeTab === "messages"`.
+- The chat list's viewport height now allows for the bar it sits above (`100dvh - 121px - safe-area` on mobile); the `md:` height is unchanged since there is no bottom bar at that width.
+
+### Tab behaviour
+
+- **Tabs remember where you left them.** Switching tabs previously always navigated to that tab's root, so going Shifts → Tasks → Shifts discarded your place (mid-visit-note included). Each tab now records its last route and restores it on return, which is how native tab bars behave. Re-tapping the active tab still pops to root and scrolls to top, and now also clears that memory so the next visit starts clean.
+- **Haptics on every tab press**, not just when switching to a different tab — re-tap previously gave no feedback at all.
+- **Immediate press feedback**: `active:scale-[0.92] active:opacity-70` plus `touch-manipulation` and `select-none`, so a tap registers visually before navigation completes rather than feeling laggy.
+- **`aria-controls`** now links each tab to its panel.
+
+Verified with a full `vite build` (exit 0).
+
 ## Robust pull-to-refresh for mobile (Base44 checkpoint 6a72a61537c9204b85d08ed3)
 
 `PullToRefresh` was rewritten and extended to every mobile page. Previously it existed only on the four primary tabs and `MyShifts`.
