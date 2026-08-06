@@ -1,4 +1,33 @@
 
+## OneDrive visit note backup: 10 bug fixes (Base44 checkpoint 6a73e8d2143dd9049c8d6d32)
+
+**Files changed**: `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/archiveOldVisitNotes/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`
+
+### High — the archive was quietly incomplete while reporting success
+
+1. **Archiving was dead — wrong field.** Both backup paths write `onedrive_synced_at` / `onedrive_file_id`, but `archiveOldVisitNotes` filtered on `note.drive_synced_at`, the legacy Google Drive marker (its comment still said "synced to Google Drive"). No OneDrive-backed note was ever archived. Now accepts either marker, so legacy Google Drive notes still archive too.
+
+2. **Multi-note shifts: one PDF uploaded, every note marked backed up.** The "consolidated PDF" branch was an unimplemented stub (`TODO`) that fell back to the current note's PDF, after which the function stamped `onedrive_file_id` + `onedrive_synced_at` on **every** note in the shift. On a team shift the other carers' notes were recorded as backed up when their content had never been uploaded — an evidence gap at inspection, and (once #1 was fixed) those notes would then be archived on the strength of a backup that did not contain them.
+
+3. **Resident notes were falsely marked backed up.** The function explicitly refuses to back up `visit_type === 'resident_note'`, but the shift-wide stamp loop marked them anyway.
+
+Fixed together by restructuring: the function now backs up **exactly the note it was invoked for** — its own PDF, its own file, its own marker. Each note in a shift is backed up by its own event. The unbounded `VisitNote.filter({ shift_id })` query (#6) disappeared with it; `shift` is now fetched for file naming only.
+
+### Medium
+
+4. **Filenames mixed UTC date with local time** — `toISOString()` for the date, `toTimeString()` for the time — so a shift either side of midnight was filed under the wrong day. Both now derive from the same local components, preferring the shift's plain `shift_date` when present.
+5. **Filename collisions silently overwrote.** Notes with no shift fell back to `visit-note-{visit_date}.pdf`, so two notes for the same client on the same day overwrote each other via the PUT upload. Filenames now include the staff name and a short note id, making every note's file distinct.
+6. Covered by the restructure above.
+7. **The two backup paths disagreed on policy.** `manualOneDriveBackup` uploaded *any* active note regardless of review state, including resident notes, and silently dropped notes with no `pdf_url` without reporting them. It now matches the event-driven policy — reviewed, non-resident only — and reports the count of reviewed notes skipped for want of a PDF.
+
+### Low
+
+8. **Empty `catch` blocks** around folder creation swallowed genuine auth/network failures (a 409 "already exists" returns a response rather than throwing, so reaching the catch always meant something real). Now logged.
+9. **Only `update` events triggered backup**, so a note created already reviewed was never picked up. `create` is now accepted.
+10. **Self-retrigger noise.** Writing the marker back re-fires the same update event. The restructure cuts this from N echoes per shift to one, and a fast-path guard now exits before the record fetch instead of after.
+
+Verified with 13 targeted assertions and an esbuild parse of all 151 backend functions.
+
 ## Bottom tab bar missing on Messages (Base44 checkpoint 6a73b4df2ce7d40d8f951c46)
 
 **Files changed**: `src/Layout.jsx`, `src/pages/Chat.jsx`
