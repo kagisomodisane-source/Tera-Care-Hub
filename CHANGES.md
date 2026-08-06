@@ -1,4 +1,25 @@
 
+## OneDrive backup verification and repair (Base44 checkpoint 6a73eace00a2b51969a9a463)
+
+Retroactive companion to the OneDrive fixes. Those stop new bad markers; this finds and repairs the ones already in the data.
+
+**New files**: `base44/functions/verifyOneDriveVisitNoteBackups/entry.ts`, `src/components/admin/OneDriveBackupVerifyPanel.jsx`
+**Changed**: `src/components/admin/OneDriveIntegrationPanel.jsx`
+
+**The detection problem**: notes falsely stamped by the old shift-wide backup carry a **valid** `onedrive_file_id` — it resolves fine, it just points at a different note's PDF. An existence check alone therefore finds nothing. The reliable signal is **several notes sharing one file id**, since only one can legitimately own it.
+
+Three classes are detected:
+
+1. **`shared_file_id`** — the team-shift signature. Because we cannot tell retroactively which note actually owned the file, the marker is cleared on all notes in the group; re-backing up the correct one is harmless and simply produces a properly named per-note file.
+2. **`resident_note`** — resident notes are never backed up but the old stamp marked them anyway. Clearing just stops them claiming a backup they never had; the backup function still refuses to upload them.
+3. **`missing_in_onedrive`** — optional, off by default since it costs one Graph call per note. Only a 404/410 counts as absent; an auth error, rate limit or 5xx is inconclusive and never clears a marker.
+
+**Repair mechanism**: clearing `onedrive_file_id` / `onedrive_synced_at` re-fires the VisitNote update event, which the (now corrected) backup function picks up and handles properly — so the repair self-heals through the existing trigger rather than duplicating upload logic. No visit note content is altered and nothing is deleted from OneDrive.
+
+Admin-gated, `dry_run: true` by default, with an `AuditLog` entry recording who ran it and the breakdown. **UI**: a "Verify Visit Note Backups" card in the OneDrive integration panel — scan shows the counts and sample affected shifts, then a confirmation dialog before anything is cleared.
+
+Verified with a full `vite build` (exit 0) and an esbuild parse of the new function.
+
 ## OneDrive visit note backup: 10 bug fixes (Base44 checkpoint 6a73e8d2143dd9049c8d6d32)
 
 **Files changed**: `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/archiveOldVisitNotes/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`
