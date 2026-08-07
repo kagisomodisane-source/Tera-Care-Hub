@@ -1,4 +1,20 @@
 
+## Live MAR chart: no shift means unscheduled, not missed (Base44 checkpoint 6a75bce83ade94cc5ca1af75)
+
+**Files changed**: `src/components/medications/OverdueMedicationsWidget.jsx`, `src/components/medications/MarChartLiveDialog.jsx`
+
+The overdue **list** and the alert monitor already suppressed doses whose scheduled time falls outside every shift for that client — nobody was rostered to be there, so it isn't a missed dose. The live MAR chart didn't apply the same rule: it showed the raw status, so an unstaffed dose still carried a red **"Overdue"** badge with only a small grey note underneath. On a compliance view that reads as a medication error.
+
+- The widget now derives a display status: when a dose is `overdue` or `due_now` **and** no shift covers its time, it is reported as `no_visit_scheduled` instead. The underlying `calculateMedicationStatus` result is preserved as `rawStatus`, and `coveredByShift` is still exposed, so nothing is lost for future use.
+- Only outstanding states are reclassified — `given_today`, `not_due`, `prn_available` and `no_schedule` are untouched.
+- The dialog renders it as a neutral slate badge ("No visit scheduled", calendar-off icon) rather than red, with the scheduled time and reason beneath it.
+- It is deliberately excluded from the **Outstanding** filter and its count: an unstaffed dose is not outstanding work for anyone.
+- Applied to both render paths — the table and the stacked card layout, where the old condition had become dead code once the status key changed.
+
+The overdue list and alert gating are unchanged; this only aligns the MAR chart with the rule they already followed.
+
+Verified with a full `vite build` (exit 0).
+
 ## OneDrive backup verification and repair (Base44 checkpoint 6a73eace00a2b51969a9a463)
 
 Retroactive companion to the OneDrive fixes. Those stop new bad markers; this finds and repairs the ones already in the data.
