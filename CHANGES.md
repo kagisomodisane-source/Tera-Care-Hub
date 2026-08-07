@@ -1,4 +1,31 @@
 
+## Shift calendar slow to load — stale time regression (Base44 checkpoint 6a75d066ccf75cd7b24ce77b)
+
+**Files changed**: `src/pages/ShiftManagement.jsx`, `src/components/offline/useOfflineQuery.jsx`
+
+### 1. The queries weren't slow — they weren't running (regression introduced here)
+
+All four data queries on the page paired `initialData: []` with a non-zero `staleTime`. React Query treats `initialData` as real data timestamped *now*, so with a `staleTime` above zero the empty array counted as **fresh** and no fetch was triggered on mount:
+
+- shifts — empty for up to **2 minutes**
+- clients / staff / locations — empty for up to **10 minutes**
+
+The calendar only populated once something else invalidated the cache, which reads as "taking forever to load".
+
+This was a regression from the earlier mobile-performance pass in this same file. Those queries previously used `staleTime: 0`, which made `initialData` instantly stale and therefore harmless; raising the stale times turned it into an instruction not to fetch. Removed `initialData` from all four — each already destructures with a `= []` default, so it was redundant as well as harmful. Also dropped the `gcTime: 5 * 60 * 1000` override on shifts so the hook's 10-minute retention applies and returning to the page finds a warm cache.
+
+Audited the other `useOfflineQuery` callers (`MyShifts`, `Dashboard`, `StaffDashboard`, `MyVisitNotes`): only `MyVisitNotes` uses `initialData`, and it pairs it with `staleTime: 0`, so it is unaffected.
+
+### 2. The offline cache was written but never read while online
+
+`useOfflineQuery` saved every result to IndexedDB but only read it back when `navigator.onLine` was false. An online load therefore always waited on a full network round trip — 1,000 shifts before the calendar could draw anything.
+
+It now hydrates from the IndexedDB cache on mount, giving an immediate first paint, then revalidates in the background. The seeded data is written with `updatedAt: 0` so it counts as stale and the real fetch still runs — seeding without that would have recreated the exact bug in section 1. Guarded so it never overwrites data the network already returned, with a re-check after the async read to handle the race.
+
+This benefits every `useOfflineQuery` consumer, not just Shift Management.
+
+Verified with targeted assertions and a full `vite build` (exit 0).
+
 ## Live MAR chart: no shift means unscheduled, not missed (Base44 checkpoint 6a75bce83ade94cc5ca1af75)
 
 **Files changed**: `src/components/medications/OverdueMedicationsWidget.jsx`, `src/components/medications/MarChartLiveDialog.jsx`
