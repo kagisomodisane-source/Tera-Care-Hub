@@ -1,3 +1,79 @@
+## Monthly revenue & cost vs service user billing rates (Base44 checkpoint 6a75e6626bdf98898ecf7b1a)
+
+**Files changed**: `base44/functions/shared/billingHelpers/entry.ts` (new), `src/components/utils/billingRates.jsx` (new), `base44/functions/auditClientBillingRates/entry.ts` (new), `base44/functions/generateMonthlyInvoices/entry.ts`, `src/components/shifts/ShiftCalendarView.jsx`, `src/pages/Payroll.jsx`
+
+### The problem
+
+Three separate implementations priced the same shift, and they all disagreed. The one that produced actual invoices was the worst of them.
+
+**1. `generateMonthlyInvoices` billed live-in care at £0.**
+
+```js
+rate = shift?.weekly_live_in_rate || client?.default_weekly_live_in_rate || 0;
+```
+
+Neither field exists — 0 occurrences in `Shift.jsonc` and 0 in `Client.jsonc`. Every `live_in_care` shift resolved to `rate = 0` and was invoiced at zero. MimarCare Ltd has a configured contract of £128.60/day for live-in care; July 2026 produced £0 of live-in revenue against £1,543.20 of delivered care.
+
+**2. It ignored `client.service_rates` entirely**, falling back to `default_hourly_rate`. Joan Temple is contracted at £23.50/hr for overnight support but carries a £20 default — any shift without a stamped rate under-billed by 15%.
+
+**3. A shift with no resolvable rate was invoiced at £0** rather than reported. Solid Rock Care Ltd and Malachi George Golden (Kai) both have `default_hourly_rate: null` and no `service_rates`, so their work would silently vanish from the ledger.
+
+**4. `Payroll.jsx` `handleGenerateInvoice` used a magic £20** (`client?.default_hourly_rate || 20`) and ignored service rates and unit pricing.
+
+**5. Corrupt `duration_minutes` fed straight into pricing.** Real July data contains a shift recording **-1,065,224,054 minutes**. The old invoicing code read `duration_minutes` first, so that one record would have produced a **-£301,808,427.30** invoice line.
+
+### The fix
+
+`resolveShiftBilling(shift, client)` is now the single rate resolver, implemented once and mirrored in two places because Deno functions cannot import from `src/`. Precedence:
+
+1. A per-unit client contract (`day`/`night`/`shift`) for the shift's `visit_type` is authoritative. Billing live-in care by the hour is a category error, not rate drift, so the contract wins and the discrepancy is reported.
+2. Otherwise an explicitly unit-priced shift bills at its own `unit_rate`.
+3. Otherwise hourly: rate stamped on the shift, then the client's hourly contract rate, then `default_hourly_rate`. A stamped rate that disagrees with the contract is billed as stamped and reported — hourly work is not silently re-priced.
+
+Unit quantities are now computed rather than assumed: `shift` bills 1, `day`/`night` bill one per 24h block started. Previously a multi-day live-in shift billed a flat single unit.
+
+A shift that resolves to no rate now **holds the whole client's invoice** and reports which shifts need a rate, instead of writing the work off at £0.
+
+Durations are sanity-bounded (`> 0`, `<= 14 days`); anything outside falls through to the start/end datetimes.
+
+### Billing basis — a deliberate policy choice
+
+The old invoicing read `duration_minutes` (clocked) first; the calendar read `scheduled_duration_minutes` first. They had to converge. **Default is now scheduled**, matching the calendar and immune to bad clock-out data. `generateMonthlyInvoices` accepts `use_recorded_duration: true` to bill actual clocked time instead.
+
+This is not cosmetic. For July 2026, Joanne Clitheroe's 179 shifts where staff clocked longer than scheduled (30-minute calls running 60–75 minutes, plus one 3-hour wellbeing check recorded as 27 hours) account for a **-£944.92** difference between the two bases.
+
+### Verified against live July 2026 data
+
+| Client | Old | New | Delta |
+|---|---|---|---|
+| MimarCare Ltd | £5,054.67 | £6,201.20 | **+£1,146.53** (live-in £0 → £1,543.20) |
+| Joan Temple | £6,290.97 | £6,185.50 | -£105.47 |
+| Joanne Clitheroe | £5,251.42 | £4,306.50 | -£944.92 |
+| Thera East Anglia | £1,532.57 | £1,518.00 | -£14.57 |
+| Home Instead | £809.97 | £822.50 | +£12.53 |
+| Malachi George Golden (Kai) | £49.78 | £58.00 | +£8.22 |
+| **Total** | **£18,989.37** | **£19,091.70** | **+£102.33** |
+
+Old figures exclude the corrupt-duration shift, which alone would have made the old total -£301,794,492.60.
+
+### New: `auditClientBillingRates`
+
+Read-only. `POST { month, year, client_id? }` returns, per service user: configured rates, expected revenue, payroll cost, margin and margin %, variance against what was actually invoiced, a per-visit-type breakdown, unpriced shifts, rate mismatches, and duration anomalies. Writes nothing.
+
+It also flags shifts whose assigned staff member has no pay rate — those contribute £0 to payroll cost, so the reported margin would otherwise be overstated.
+
+### Known, not changed
+
+- `generatePayslip` uses `contract.hourly_rate || 11.44` while the calendar's cost figure uses `staff.hourly_rate`. These are different sources for the same number; reconciling them needs a decision about which is authoritative.
+- `Payroll.jsx` `handleGenerateInvoice` bills every non-invoiced shift for a client regardless of status or month, unlike `generateMonthlyInvoices` which bills completed shifts within the period.
+- `base44/functions/shared/payrollHelpers/` is imported nowhere.
+
+### Verification
+
+- All **162** backend functions parse under esbuild (0 failures).
+- `vite build` clean.
+- Rate resolution replayed against all **392** completed July 2026 shifts and all 12 client records.
+
 
 ## Shift calendar slow to load — stale time regression (Base44 checkpoint 6a75d066ccf75cd7b24ce77b)
 
