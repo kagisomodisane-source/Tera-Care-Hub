@@ -1,3 +1,60 @@
+## OneDrive visit note backup — made self-healing and observable (Base44 checkpoint 6a7a570bd732b9c2793fb6d7)
+
+**Files changed**: `base44/functions/shared/oneDriveVisitNoteHelpers/entry.ts` (new), `base44/functions/syncPendingVisitNotesToOneDrive/entry.ts` (new), `src/components/admin/OneDriveVisitNoteSyncPanel.jsx` (new), `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`, `base44/entities/VisitNote.jsonc`, `src/components/admin/OneDriveIntegrationPanel.jsx`
+
+Follows the correctness fix in the previous entry. That made backup work; this makes it survive failure.
+
+### What was still weak
+
+- **One shot, no retry.** Backup happened only at the moment of review. A note that failed — expired token, transient Graph 5xx, reviewed while the integration was off — was left with no marker and nothing to pick it up.
+- **Failures were invisible.** They went to `console.error` and nowhere else. No field on the note, nothing in the UI. An admin had no way to know a note had never left the app.
+- **`archiveOldVisitNotes` archives notes once `onedrive_synced_at` is set.** A note that silently failed backup stays unarchived, but the inverse — a wrong marker — archives a note that was never backed up. Failure tracking is what makes that distinction observable.
+- **Per-note folder calls.** Draining a 200-note backlog through the single-note function would issue ~400 Graph folder-create calls and re-fetch the token each time.
+
+### Shared upload core
+
+`shared/oneDriveVisitNoteHelpers/entry.ts` now holds the per-note upload: skip-reason evaluation, filename construction, folder creation with a caller-supplied cache, PDF generation when missing, the upload, and marker stamping. `backupVisitNoteToOneDrive` and the new sync job both use it.
+
+This matters more than ordinary deduplication here: the previous second implementation filed notes under a different folder with a different naming scheme, so the same note could end up in two places or neither.
+
+### Failure tracking
+
+Three fields added to `VisitNote`:
+
+| Field | Purpose |
+|---|---|
+| `onedrive_backup_error` | Why the last attempt failed. Cleared on success. |
+| `onedrive_backup_attempts` | Consecutive failures. Reset to 0 on success. |
+| `onedrive_last_attempt_at` | Last attempt, successful or not. |
+
+`recordBackupFailure` writes these whenever an upload throws, so a stuck note names its own problem.
+
+### Catch-up job
+
+`syncPendingVisitNotesToOneDrive` finds reviewed, non-resident, unsynced notes and drains them. Safe to run on a schedule.
+
+- Takes the OneDrive token **once** and shares a folder cache across the run.
+- **Oldest first** — the backlog drains in the order care was delivered, and the note that has waited longest is the one most at risk of being archived before it was ever backed up.
+- Gives up on a note after `MAX_BACKUP_ATTEMPTS` (5) and reports it under `needs_attention` rather than retrying forever; `retry_failed: true` overrides.
+- A dead connector returns 502 **before** touching any note, so an app-level outage does not burn every note's retry budget.
+- `dry_run: true` reports the queue without uploading.
+
+### Admin panel
+
+`OneDriveVisitNoteSyncPanel` sits in Settings → Integrations → OneDrive: waiting count, repeatedly-failed count, per-note error text, "Back up N notes", and "Retry N stuck". Uploads run 200 per click with a remaining count.
+
+The manual "Run Backup Now" button's visit-notes branch now delegates to the sync job in a single call rather than invoking the per-note function in a loop.
+
+### Security note
+
+My first draft of the sync job skipped the auth check when the request body contained an `event` key, intending to allow scheduled runs. That is a bypass — any caller could pass `{"event":{}}` and run it. Replaced with the pattern already used by `resetAnnualLeave` and `resolveStaleShifts`: if a session is present, require manager/admin; unauthenticated invocations are allowed for the scheduler. The decision never keys off the request body.
+
+### Verification
+
+- All **164** backend functions parse under esbuild (0 failures).
+- `vite build` clean.
+- Live entity schema confirms all five OneDrive fields present.
+
 ## Visit notes never reaching OneDrive (Base44 checkpoint 6a7a51b183272d021d39b8e0)
 
 **Files changed**: `base44/entities/VisitNote.jsonc`, `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`, `src/pages/VisitNotes.jsx`
