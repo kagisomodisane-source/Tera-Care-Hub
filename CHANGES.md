@@ -1,3 +1,63 @@
+## Visit notes never reaching OneDrive (Base44 checkpoint 6a7a51b183272d021d39b8e0)
+
+**Files changed**: `base44/entities/VisitNote.jsonc`, `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`, `src/pages/VisitNotes.jsx`
+
+### Evidence
+
+Of the 40 most recent visit notes, **every one** has `onedrive_synced_at: null` and `pdf_url: null` — including the 33 that are `manager_reviewed: true` with a `reviewed_at` timestamp. The admin setting is on (`onedrive_sync` → `{ enabled: true, auto_backup_visit_notes: true }`, last saved 2026-08-01). Not a single visit note has ever been backed up.
+
+### Three independent faults
+
+**1. `onedrive_file_id` was never a field on VisitNote.**
+
+`VisitNote.jsonc` defined `pdf_url`, `drive_synced_at` and `onedrive_synced_at` — no `onedrive_file_id`. Two functions write it and three read it:
+
+- `backupVisitNoteToOneDrive` writes it, then checks it to decide "already backed up"
+- `manualOneDriveBackup` writes it and filters on `!note.onedrive_file_id`
+- `verifyOneDriveVisitNoteBackups` groups notes by it to detect shared-file duplicates
+- `archiveOldVisitNotes` reads `onedrive_synced_at || drive_synced_at`
+
+The field is now declared on the entity.
+
+**2. The manual "Backup Now" button could never upload a visit note.**
+
+```js
+const pendingNotes = candidates.filter((note) => note.pdf_url);
+```
+
+PDFs are only generated on demand, so no note carries a `pdf_url` and `pendingNotes` was always empty. The button reported `"N reviewed visit note(s) skipped — no PDF generated yet"` and returned success having uploaded nothing.
+
+The visit-notes branch now delegates to `backupVisitNoteToOneDrive`, which generates the missing PDF. That also collapses a second, divergent upload implementation: the manual path filed notes flat at `Wellstride/VisitNotes/visit-note-{id}-{date}.pdf` while the event path files them per client at `VisitNotes/{client}/shift-{date}-{time}-{staff}-{shortid}.pdf`. One destination and one naming scheme now.
+
+**3. Backup depended entirely on an entity-event trigger, with no in-app caller.**
+
+Nothing in `src/` invoked `backupVisitNoteToOneDrive`. `handleReview` in `VisitNotes.jsx` sets `manager_reviewed: true` — the exact moment a note becomes eligible — and then did nothing further, relying on a VisitNote update trigger configured in the Base44 platform rather than in code. Given zero notes have ever synced, that trigger is either not wired up or failing on every invocation.
+
+`handleReview` now invokes the backup directly and surfaces a warning toast on failure instead of failing silently. The function is idempotent (it no-ops on a note already carrying a OneDrive marker), so a working trigger and this call cannot double-upload.
+
+### Also fixed
+
+A failed note fetch inside `backupVisitNoteToOneDrive` fell back to the event payload:
+
+```js
+.catch(() => []);
+const currentVisitNote = latestNotes?.[0] || visitNote;
+```
+
+When invoked directly with just an id, that fallback has no `manager_reviewed`, so the note was reported as "not yet reviewed" and skipped. It now throws instead.
+
+The function also never consulted the admin toggle it is governed by. It now skips when `onedrive_sync` explicitly sets `enabled: false` or `auto_backup_visit_notes: false` — a *missing* settings record does not disable backup.
+
+### Not verifiable from here
+
+Entity-event trigger registration lives in Base44 platform configuration, not in the repo, so I could not inspect or repair the trigger itself. The review-time invoke removes the dependency on it. Whether the `one_drive` connector still holds a valid token is likewise only observable at runtime — if uploads now fail, the toast will carry the Graph API error.
+
+### Verification
+
+- All backend functions parse under esbuild (0 failures).
+- `VisitNote.jsonc` parses and the live entity schema reports `onedrive_file_id` present.
+- `vite build` clean.
+
 ## Monthly revenue & cost vs service user billing rates (Base44 checkpoint 6a75e6626bdf98898ecf7b1a)
 
 **Files changed**: `base44/functions/shared/billingHelpers/entry.ts` (new), `src/components/utils/billingRates.jsx` (new), `base44/functions/auditClientBillingRates/entry.ts` (new), `base44/functions/generateMonthlyInvoices/entry.ts`, `src/components/shifts/ShiftCalendarView.jsx`, `src/pages/Payroll.jsx`
