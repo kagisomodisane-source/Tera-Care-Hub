@@ -1,3 +1,71 @@
+## Notification badges and counts — 10 bugs (Base44 checkpoint 6a7bafc790508a97f2c3dab4)
+
+**Files changed**: `src/components/chat/useUnreadCounts.jsx`, `src/components/layout/useBadgeCounts.jsx`, `src/components/layout/navigationConfig.jsx`, `src/components/layout/BottomTabs.jsx`, `src/components/hooks/useNotifications.jsx`, `src/components/notifications/NotificationCenter.jsx`, `src/Layout.jsx`
+
+### 1. Chat unread badge was permanently 0 (critical)
+
+```js
+base44.entities.Message.filter({
+  chat_room_id: { $in: roomIds },
+  sender_email: { $ne: user.email },
+  read_by:      { $nin: [user.email] }
+}, '-created_date', 200);
+```
+
+A **three-field** compound filter. Base44 compound filters silently return `[]` — a constraint documented in 12 other places in this codebase, and the reason `useBadgeCounts` uses single-field filters plus JS narrowing throughout. This one query was the outlier, so the Messages badge never showed anything. Now a single-field `chat_room_id` filter with sender and `read_by` narrowed in JS.
+
+### 2. Badge queries never performed a first fetch (critical)
+
+Both consolidated badge queries combined `initialData` with `staleTime: 2min` and `refetchOnMount: false`. React Query timestamps `initialData` as of now, so the query believed it already held fresh data and never fetched. Badges sat at **0 until an entity subscription happened to fire** (3s debounce) or the connection dropped and returned. On a quiet system they could stay 0 indefinitely.
+
+Same failure mode as the `initialData: []` regression fixed earlier in `ShiftManagement.jsx`.
+
+### 3. OS app badge double- and triple-counted
+
+`totalMobileAlerts` summed every nav item's badge. `pendingApprovals` (on Staff Management) is the union of leave, timesheets, visit notes, payslip adjustments and forms — and leave, visit notes and forms each carry their own nav badge too. Staff see `complianceAlerts` on both My Tasks and My Compliance.
+
+One pending form contributed **2** to the phone badge; one staff compliance issue contributed **2**. Replaced with a `totalAlerts` computed in `useBadgeCounts` from the distinct sources.
+
+### 4. Staff Management badge counted leave twice
+
+`badge: badgeCounts.pendingLeave + badgeCounts.pendingApprovals` — `pendingApprovals` already contains `pendingLeave`.
+
+### 5. Unread notification count read only the newest 100
+
+The account checked holds **500+** notifications and generates them in bursts of ~50. The badge fetched the newest 100 and narrowed to unread in JS, so once two bursts of read notifications arrived, older unread fell outside the window and the badge under-reported — potentially to 0. Raised to 500 with the constraint documented.
+
+### 6. `read === false` hid notifications with no `read` field
+
+A record written without the field counted as read. `NotificationCenter` used `!n.read` for the same records, so the list and the badge disagreed. Now `read !== true` in both.
+
+### 7. "Shifts needing attention" counted shifts with no bids
+
+```js
+.filter(x => x?.bids?.length > 0 || x?.open_for_bidding === true)
+```
+
+The second clause is redundant against the `status: 'open_for_bidding'` query and made every open shift count. Now requires actual bids.
+
+### 8. Staff shift window let unwritten visit notes fall off the end
+
+`Shift.filter({ assigned_to }, '-start_datetime', 100)` sorts newest-first, so scheduled *future* shifts consume the budget before past ones. A carer with 100+ future shifts had their pending visit notes drop out of the count entirely. Raised to 300.
+
+### 9. Archived notifications counted as unread in the bell
+
+`useNotifications` counted `!n.read` with no archived check, while `useBadgeCounts` excluded archived — so an archived-but-unread notification appeared in one number and not the other. Archived is a soft delete; it is now excluded from the unread count, the action-required count, the list itself, and the mark-all-as-read write batch.
+
+### 10. Bell count read 50 records, sidebar read 500
+
+Two different numbers for the same thing on the same screen. Raised the bell to 200; rendering is inside a `ScrollArea`, so the cost is list length rather than layout.
+
+Also removed three dead `??` fallback chains in `BottomTabs` — `useBadgeCounts` always returns numbers for those keys, so the second operand could never be reached and read as a safety net that did not exist.
+
+### Verification
+
+- `vite build` clean.
+- Compound-filter constraint cross-checked against the 12 existing in-repo annotations.
+- Unread/notification volumes confirmed against live data (62 unread against a 500+ history for the account checked).
+
 ## Cleared shift duration anomalies (Base44 checkpoint 6a7ad600d77e00b93783d12a)
 
 **Files changed**: `base44/functions/auditClientBillingRates/entry.ts`, `SHIFT_DURATION_CLEANUP_LOG.md` (new)
