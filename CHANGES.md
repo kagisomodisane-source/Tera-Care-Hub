@@ -1,3 +1,46 @@
+## Staff Management badge counted items the page never shows (Base44 checkpoint 6a7bb277428b533ce8e040a5)
+
+**Files changed**: `src/components/layout/useBadgeCounts.jsx`, `src/components/layout/navigationConfig.jsx`, `src/pages/Staff.jsx`
+
+### The 34
+
+The Staff Management sidebar badge used `badgeCounts.pendingApprovals`, which is the union of five unrelated queues. Live composition:
+
+| Source | Count | Where it actually lives |
+|---|---|---|
+| `FormSubmission` submitted | 23 | Forms page |
+| `VisitNote` not manager-reviewed | 10 | Visit Notes page |
+| `Timesheet` submitted | 1 | Timesheet Approval page |
+| `LeaveRequest` pending | 0 | Staff → Leave tab / Leave Management |
+| `PayslipAdjustmentRequest` pending | 0 | Payroll |
+| **Total** | **34** | |
+
+The Staff page has five tabs — staff list, compliance, leave, availability, archived. It renders no forms, no visit notes, no timesheets. So 33 of the 34 could not be found anywhere on the page the badge pointed to, and the remaining sources were already badged correctly on their own nav items — the count was duplicated as well as misplaced.
+
+### Each count now belongs to the page that shows it
+
+- **Staff Management** → `pendingLeave` (its Leave tab renders exactly these). Now 0.
+- **Leave Management** → `pendingLeave`. New badge; this page had none.
+- **Timesheet Approval** → `pendingTimesheets`. New badge — the one pending timesheet had no badge anywhere, so it was invisible rather than misfiled.
+- Visit Notes and Forms keep their existing, already-correct badges.
+
+The Staff page's **Leave tab now carries the same count**, so landing on the page shows which tab the sidebar number refers to.
+
+### Same fault found in two more places
+
+**Mobile Tasks tab (manager).** `taskAlerts` was `pendingApprovals + complianceDocs` and the tab opens `/TaskManagement`, which lists `Task` records and nothing else. Now counts open tasks (13 live), which that page does show. Approvals and compliance remain badged on their own nav items, and `totalAlerts` still covers all of them so the OS badge is unchanged in meaning.
+
+**My Tasks (staff).** Badged `complianceAlerts` (critical + warnings) while `MyTasks.jsx` only lists critical compliance. A carer with warnings but no critical issues saw a badge and an empty page. Split out `complianceCritical` for My Tasks; My Compliance shows both and keeps `complianceAlerts`.
+
+### Rule applied
+
+A badge on a nav item should count only what that destination renders. Where a queue had no home, it got a badge on its own page rather than being folded into a neighbour's.
+
+### Verification
+
+- Composition of the 34 confirmed by querying each of the five sources directly.
+- `vite build` clean.
+
 ## Notification badges and counts — 10 bugs (Base44 checkpoint 6a7bafc790508a97f2c3dab4)
 
 **Files changed**: `src/components/chat/useUnreadCounts.jsx`, `src/components/layout/useBadgeCounts.jsx`, `src/components/layout/navigationConfig.jsx`, `src/components/layout/BottomTabs.jsx`, `src/components/hooks/useNotifications.jsx`, `src/components/notifications/NotificationCenter.jsx`, `src/Layout.jsx`
