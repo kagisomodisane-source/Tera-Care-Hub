@@ -1,3 +1,39 @@
+## Cleared shift duration anomalies (Base44 checkpoint 6a7ad600d77e00b93783d12a)
+
+**Files changed**: `base44/functions/auditClientBillingRates/entry.ts`, `SHIFT_DURATION_CLEANUP_LOG.md` (new)
+**Data changed**: 66 `Shift` records — `duration_minutes` cleared. Full reversal log in `SHIFT_DURATION_CLEANUP_LOG.md`.
+
+Clears the `duration_anomalies` surfaced by the billing audit.
+
+| Class | Records | Action |
+|---|---|---|
+| Negative duration (-1,065,224,054 min) | 1 | Cleared |
+| Zero duration on a `completed` shift | 63 | Cleared |
+| Implausible duration (27 h and 38 h non-live-in visits) | 2 | Cleared |
+| Zero duration on a `cancelled` shift | 1 | **Kept** — legitimate |
+| Clocked time overran the plan (e.g. 30-min call ran 75 min) | ~179 | **Kept** — genuine timesheet data |
+
+### Cleared, not backfilled
+
+Every affected shift has a valid `start_datetime`/`end_datetime`, so a plausible value could have been written in. It deliberately was not. `duration_minutes` means *time staff actually worked*; setting it to the scheduled window asserts staff worked exactly as planned, which this system has no evidence of. In a care record, absent is honest and invented is not.
+
+### No financial impact
+
+Billing resolves hours from `scheduled_duration_minutes` first, so these values were already excluded from invoicing. Verified by replaying all 392 completed July 2026 shifts through `resolveShiftBilling` before and after — per-client and total revenue identical to the penny (£19,091.70).
+
+### Bug this exposed in the audit function
+
+`Number(null)` is `0`, so `recordedIsCorrupt` treated a *missing* duration as a corrupt zero. Left unfixed, the audit would have re-reported all 66 just-cleared shifts as anomalies on the next run. It now distinguishes absent from zero — a shift that was never clocked is not an anomaly.
+
+### The two judgement calls
+
+The 64 negatives and zeros are unambiguously broken. The other two are not quite:
+
+- Joanne Clitheroe, 2026-07-14, wellbeing check scheduled 19:59–22:59, recorded **27 hours**
+- MimarCare Ltd, 2026-07-13, personal care scheduled 06:00–20:00, recorded **38.1 hours**
+
+Both look like a missed clock-out closed by a later event. Neither fed any cost or pay figure, so nothing changed downstream, but they are worth confirming with the carers if the actual hours matter.
+
 ## OneDrive visit note backup — made self-healing and observable (Base44 checkpoint 6a7a570bd732b9c2793fb6d7)
 
 **Files changed**: `base44/functions/shared/oneDriveVisitNoteHelpers/entry.ts` (new), `base44/functions/syncPendingVisitNotesToOneDrive/entry.ts` (new), `src/components/admin/OneDriveVisitNoteSyncPanel.jsx` (new), `base44/functions/backupVisitNoteToOneDrive/entry.ts`, `base44/functions/manualOneDriveBackup/entry.ts`, `base44/entities/VisitNote.jsonc`, `src/components/admin/OneDriveIntegrationPanel.jsx`
