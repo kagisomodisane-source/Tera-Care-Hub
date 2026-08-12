@@ -1,3 +1,42 @@
+## AI extraction when recording supervision (Base44 checkpoint 6a7c922b7d038557f3f11db8)
+
+**Files changed**: `src/components/cqc/SupervisionAiExtract.jsx` (new), `src/components/cqc/SupervisionDialog.jsx`, `base44/entities/Supervision.jsonc`
+
+### What it does
+
+A panel at the top of Record/Edit Supervision takes either route:
+
+- **Upload document** — the signed supervision form, a scan, or a phone photo (pdf/doc/docx/txt/png/jpg/webp)
+- **Paste notes** — rough typed or transcribed notes from the meeting
+
+Both call `Core.InvokeLLM` with a `response_json_schema` mapped to the Supervision entity, following the pattern already used in `FormUploadAnalyzer`. Extracted: supervision date, type, duration, next date, workload review, wellbeing check, achievements, performance concerns, staff comments, training needs, topics discussed, goals set, and action plan.
+
+### Nothing is applied automatically
+
+A supervision record is HR and CQC evidence, so extraction proposes rather than fills. Every field found is listed with its actual value and a checkbox; only ticked fields are merged, and only when "Apply selected" is pressed. Saving is still a separate, deliberate step.
+
+**The staff attribution is deliberately harder than the rest.** A detected name is matched against the staff list but never applied silently — it appears as its own amber-bordered confirmation showing the name the AI read, because attributing a supervision to the wrong person is an HR problem rather than a typo. The prompt also specifies the name wanted is the person *being supervised*, not the supervisor.
+
+The prompt instructs the model to extract only what is written and return null rather than infer, on the grounds that a blank field is better than a plausible invention in a compliance record.
+
+### Extracted content can no longer be saved unseen
+
+The dialog only ever had editors for about half the entity. `topics_discussed`, `training_needs_identified`, `goals_set`, `action_plan` and `staff_comments` were in its form state with no UI, so extraction into them would have been invisible. They now render as a read-only "Additional recorded content" block with a Clear button, so nothing reaches the record without the supervisor seeing it.
+
+### Provenance
+
+Three fields added to `Supervision`: `ai_extracted`, `ai_extraction_source` (the document name or "Typed supervision notes") and `ai_extracted_at`. An AI-assisted record is badged as such in the dialog. For a CQC-inspectable record, whether a human typed it or a model produced it is worth being able to answer.
+
+### Two bugs fixed alongside
+
+- **Editing sent system fields back through a PUT.** `setFormData(supervision)` loads the whole record including `id`, `created_date`, `created_by`; the update passed it straight through. Now merged through `stripSystemFields`.
+- **The new-supervision reset omitted `document_url`**, so a fresh supervision opened after an edited one inherited the previous record's attached document. The AI provenance fields are reset with it.
+
+### Verification
+
+- Live entity schema confirms the three new fields.
+- `Supervision.jsonc` parses; `vite build` clean.
+
 ## Mileage submit button bugs (Base44 checkpoint 6a7c22a7e0b9624daeb7476a)
 
 **Files changed**: `src/pages/MyMileageClaims.jsx`, `src/components/mileage/CompanyCarMileageLogger.jsx`
