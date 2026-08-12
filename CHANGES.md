@@ -1,3 +1,57 @@
+## Mileage submit button bugs (Base44 checkpoint 6a7c22a7e0b9624daeb7476a)
+
+**Files changed**: `src/pages/MyMileageClaims.jsx`, `src/components/mileage/CompanyCarMileageLogger.jsx`
+
+### 1. Editing a claim wiped its approval trail (critical)
+
+```js
+updateMutation.mutate({ id: editingClaim.id, data: claimData });
+```
+
+`claimData` is `{...formData}` plus five fields — 18 keys against the entity's **39**. Base44's `update()` is a PUT, so everything absent was erased:
+
+`approved_by_email`, `approved_by_name`, `approval_date`, `rejection_reason`, `manager_notes`, `is_reimbursed_on_payslip`, `payslip_id`, `reimbursement_date`, `entry_type`, `auto_detected`, `linked_shift_id`, `linked_client_id`, the four GPS coordinates, `calculated_distance_miles`, `passengers`, `shift_sequence_ids`, `gps_accuracy_meters`.
+
+Editing is offered on `pending` claims, so a manager's notes were destroyed by the claimant editing afterwards, and an auto-detected claim lost the GPS provenance that distinguishes it from a hand-typed one. Now merges onto the existing record via `stripSystemFields`.
+
+### 2. No validation before submitting
+
+The schema requires `purpose`, `start_address`, `end_address`, `distance_miles`, `rate_per_mile`. Nothing checked any of them, so "Submit for Approval" on an empty form pushed a **£0 claim** into the approval queue. Submissions now name the missing fields and require distance and rate above zero. Drafts stay lenient beyond a claim date — an unfinished claim is the point of a draft.
+
+### 3. Re-saving a submitted claim restamped its submission time
+
+`submitted_date: isDraft ? undefined : new Date().toISOString()` reset the timestamp on every save, moving the claim within the approval queue. The original is now preserved; saving back to draft clears it explicitly with `null` rather than relying on `undefined` being dropped during serialisation.
+
+### 4. Approved and paid claims could be deleted
+
+The delete button rendered on **every** claim regardless of status, so a staff member could permanently remove an approved — or already reimbursed — financial record. Delete is now limited to `draft`, `pending`, `rejected` and `cancelled`, and `window.confirm` is replaced with an `AlertDialog` naming the date, purpose and amount.
+
+### 5. Cancel left the previous claim loaded
+
+`onClick={() => setShowDialog(false)}` sets state directly, so Radix never fired `onOpenChange` and the reset inside it was skipped. Cancel now clears `editingClaim` and the form.
+
+### 6. Company car log: a blank odometer reading counted as zero
+
+```js
+const start = Number(formData.start_mileage);
+if (!Number.isFinite(start) || ...) return 0;
+```
+
+`Number("")` is `0`, not `NaN`, so the finite check never rejected an empty field. Leaving start mileage blank with an end reading of 48,000 logged a **48,000-mile trip** and passed the `milesUsed > 0` guard. Empty readings are now rejected before conversion, and negative starts are refused.
+
+Its required fields — `vehicle_registration`, `trip_date`, `purpose` — were also unchecked and are now validated client-side instead of surfacing a raw server error.
+
+### Not changed
+
+`is_return_journey` is carried in the claim form state and round-trips on edit, but has no control to set it and no effect on the total. It is inert rather than wrong; wiring it up would change claim amounts, which is a policy decision.
+
+`CompanyCarMileageLog` updates send all 17 schema fields, so that PUT loses nothing.
+
+### Verification
+
+- Field-by-field diff of `MileageClaim`'s 39 schema fields against the 18 the form sent.
+- `vite build` clean.
+
 ## Draft tag on visit notes (Base44 checkpoint 6a7c1c9b1e7a535a60e3cb4f)
 
 **Files changed**: `src/components/visit-notes/DraftNoteBadge.jsx` (new), `src/pages/VisitNotes.jsx`, `src/components/visit-notes/VisitNoteCard.jsx`
