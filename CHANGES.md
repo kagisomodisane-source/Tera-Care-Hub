@@ -1,3 +1,35 @@
+## Managers can manage the resource library (Base44 checkpoint 6a7c02ebc37ec2c31ab84edb)
+
+**Files changed**: `base44/entities/Resource.jsonc`, `src/components/resources/ResourceLibraryPanel.jsx`
+
+Follows the CRUD work in the previous entry, where write access was admin-only because `Resource` RLS granted create/update/delete to `role: "admin"` alone.
+
+### RLS
+
+Create, update and delete now allow:
+
+```json
+{ "$or": [
+  { "user_condition": { "role": "admin" } },
+  { "user_condition": { "role": "manager" } },
+  { "user_condition": { "app_role": { "$in": ["super_admin", "admin", "manager"] } } }
+]}
+```
+
+Covering both `role` and `app_role` follows the pattern already established in `Training.jsonc`, and matters here because this app grants elevated access through either field — `marge.ntabeni` is `role: admin` with `app_role: manager`, while others are `role: user` with an elevated `app_role`. Keying on one field alone would miss real managers.
+
+`read` is unchanged — admin, manager and user could already read.
+
+### UI gate
+
+`isAdmin` became `canManage`, checking exactly the same role sets as the RLS above. The comment added in the previous change said not to widen this to `app_role`; that was correct against the old RLS and is now wrong, so it has been replaced with one explaining the gate must stay in lockstep with the RLS in both directions — widening it alone renders controls the server rejects, narrowing it hides actions a user is entitled to.
+
+### Verification
+
+- Live entity schema confirms the new RLS is applied.
+- `Resource.jsonc` parses; `vite build` clean.
+- No `isAdmin` references remain in the panel.
+
 ## Policy Hub resource library — full CRUD (Base44 checkpoint 6a7bb82d61c5506626468089)
 
 **Files changed**: `src/components/resources/ResourceFormDialog.jsx` (new), `src/components/resources/AddResourceDialog.jsx` (removed), `src/components/resources/ResourceCard.jsx`, `src/components/resources/ResourceLibraryPanel.jsx`, `src/pages/ResourceLibrary.jsx`
