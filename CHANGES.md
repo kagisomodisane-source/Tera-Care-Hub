@@ -1,3 +1,36 @@
+## Draft tag on visit notes (Base44 checkpoint 6a7c1c9b1e7a535a60e3cb4f)
+
+**Files changed**: `src/components/visit-notes/DraftNoteBadge.jsx` (new), `src/pages/VisitNotes.jsx`, `src/components/visit-notes/VisitNoteCard.jsx`
+
+One shared `DraftNoteBadge` — amber, `FileEdit` icon, "Draft — not submitted" — rather than per-screen wording, so the tag cannot drift between the places a note is rendered.
+
+### Where it shows
+
+| Location | Before |
+|---|---|
+| Review page card | Inline badge added in the previous change, now the shared one |
+| Review dialog header | Title read "Review Visit Note" for a note that cannot be reviewed; now "Draft Visit Note" with the tag |
+| **My Visit Notes card (carer's own list)** | Read **"Pending Review"** — implying it had been sent for sign-off when it had never been submitted |
+
+The carer's own list was the important one: the person who has to finish the note was being told it was already awaiting review.
+
+Drafts also carry an amber ring in the carer's list, matching how retrospective entries are highlighted.
+
+### Filter
+
+Status filter gains **"Drafts (not submitted)"**, so unfinished notes can be isolated and chased.
+
+`"Pending Review"` now means submitted and awaiting sign-off — it was `!manager_reviewed`, which swept in drafts once they became visible.
+
+### Memo comparator
+
+`VisitNoteCard` is `React.memo`'d and its comparator did not test `note.status`, so a note going draft → submitted would not have re-rendered its badge. Added.
+
+### Verification
+
+- `vite build` clean.
+- Only one definition of the draft wording remains in the codebase.
+
 ## Unsubmitted drafts were hidden from visit note review (Base44 checkpoint 6a7c1625d6af6863eb0c901f)
 
 **Files changed**: `src/pages/VisitNotes.jsx`, `src/components/layout/useBadgeCounts.jsx`
