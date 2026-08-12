@@ -1,3 +1,47 @@
+## Reviewed visit notes missing when filtering (Base44 checkpoint 6a7ca56ed9c37839237aecdd)
+
+**Files changed**: `src/pages/VisitNotes.jsx`
+
+### Cause — a side effect of the OneDrive fix
+
+`filteredNotes` dropped any note that was reviewed, backed up, and reviewed more than 24 hours ago:
+
+```js
+if (note.manager_reviewed && note.reviewed_at && (note.onedrive_synced_at || note.drive_synced_at)) {
+  if (now - reviewedTime >= TWENTY_FOUR_HOURS) return false;
+}
+```
+
+That rule ran **before** the status filter, so it applied even when the user explicitly asked for "Reviewed".
+
+It had never fired, because no visit note had ever carried a sync marker — the OneDrive backup was broken. Once that was fixed, notes started syncing (first marker `2026-08-10T22:42`), and a day later they began disappearing.
+
+At the time of the fix, of 317 reviewed active notes:
+
+- **51** had a sync marker
+- **45 were already hidden** — Joanne Clitheroe 29, Joan Temple 11, Marcus Andrew Rawlinson 3, MimarCare Ltd 1, Thera East Anglia 1
+- 6 more were within hours of vanishing
+
+### Fix
+
+The rule now applies only to the **default view**. Choosing a status, searching, or setting a date range is an explicit request, and answering it with a silently trimmed list is wrong.
+
+When notes are being hidden, the page says so and offers a "Show them" button rather than leaving the list quietly short.
+
+| | Before | After |
+|---|---|---|
+| Filter = Reviewed | 272 of 317 | **317** |
+| Default view | 272, silently | 272, with a banner offering the other 45 |
+
+### Also: the reviewed list rendered at most 20
+
+`reviewedNotes.slice(0, 20)` was a hard cap with no way past it — the label said "use filters to narrow", but filtering was itself the thing losing notes. Now starts at 20 with a "Show more reviewed notes (N remaining)" control.
+
+### Verification
+
+- Counts computed against all 317 live reviewed notes.
+- `vite build` clean.
+
 ## AI extraction when recording supervision (Base44 checkpoint 6a7c922b7d038557f3f11db8)
 
 **Files changed**: `src/components/cqc/SupervisionAiExtract.jsx` (new), `src/components/cqc/SupervisionDialog.jsx`, `base44/entities/Supervision.jsonc`
