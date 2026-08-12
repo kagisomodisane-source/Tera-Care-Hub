@@ -1,3 +1,53 @@
+## Unsubmitted drafts were hidden from visit note review (Base44 checkpoint 6a7c1625d6af6863eb0c901f)
+
+**Files changed**: `src/pages/VisitNotes.jsx`, `src/components/layout/useBadgeCounts.jsx`
+
+### My own regression
+
+The earlier duplicate-visit-note fix added this to the review page query:
+
+```js
+// Drafts are work in progress — they are not submitted notes and must
+// not appear alongside the finalised version in review.
+const notes = allNotes.filter((note) => note?.status !== 'draft');
+```
+
+The reasoning held only for the case it was written for: a draft that has a finalised sibling on the same shift. Blanket-excluding every draft also hid drafts with **no** finalised counterpart — genuinely unfinished care records that nobody could see or chase.
+
+All 5 drafts in the system are that second case. Each is the only note on its shift, so none was ever a duplicate:
+
+| Draft | Client | Carer | Visit date |
+|---|---|---|---|
+| `6a7c14e4…` | Joanne Clitheroe | rosemarychimombegweshe | 2026-08-12 |
+| `6a7b2f38…` | Joan Temple | rosemarychimombegweshe | 2026-08-11 |
+| `6a774787…` | Joanne Clitheroe | rosemarychimombegweshe | 2026-08-08 |
+| `6a723561…` | Joanne Clitheroe | faithnamuyomba6 | 2026-08-04 |
+| `6a71c4eb…` | Joanne Clitheroe | faithnamuyomba6 | 2026-08-04 |
+
+Two had been invisible for over a week.
+
+### The rule now
+
+A draft is hidden **only** when a submitted note already exists for the same `shift_id`. That still prevents the duplicate pairing the original fix targeted, while leaving orphaned drafts visible.
+
+### Drafts are shown as drafts, not as pending reviews
+
+- Amber left border and tint instead of the orange used for submitted notes.
+- Badge reads **"Draft — not submitted"** rather than "Pending Review".
+- The Review Decision panel is replaced with an explanation naming the carer and saying there is nothing to sign off yet.
+- The Submit Review button is hidden, and `handleReview` refuses a draft at the source. Signing one off would mark work reviewed that the carer never finished — and the OneDrive backup, which triggers on review, would then archive it as a completed record.
+
+### Badge aligned
+
+The manager visit-note badge counted every unreviewed draft while the page hid them. It now applies the same shift-level rule, so the count matches the list.
+
+One residual gap: if a draft's shift has a submitted note that has *already been reviewed*, that note is outside the badge query, so the draft still counts while the page hides it. Rare, and closing it would mean fetching all notes for a badge.
+
+### Verification
+
+- Confirmed against live data that all five drafts are the only note on their shift.
+- `vite build` clean.
+
 ## Managers can manage the resource library (Base44 checkpoint 6a7c02ebc37ec2c31ab84edb)
 
 **Files changed**: `base44/entities/Resource.jsonc`, `src/components/resources/ResourceLibraryPanel.jsx`
