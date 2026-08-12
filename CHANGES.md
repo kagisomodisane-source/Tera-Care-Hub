@@ -1,3 +1,45 @@
+## Policy Hub resource library — full CRUD (Base44 checkpoint 6a7bb82d61c5506626468089)
+
+**Files changed**: `src/components/resources/ResourceFormDialog.jsx` (new), `src/components/resources/AddResourceDialog.jsx` (removed), `src/components/resources/ResourceCard.jsx`, `src/components/resources/ResourceLibraryPanel.jsx`, `src/pages/ResourceLibrary.jsx`
+
+### Before
+
+Create and Read only. There was no way to edit a resource at all — a typo in a title, a wrong category, or a superseded file meant deleting and re-uploading. Delete existed but was reachable only after opening the preview dialog, confirmed with `window.confirm`, and was a **hard delete** despite the entity carrying `status: active | archived` and the list querying `status: "active"`. Archiving was clearly the original intent and was never wired up.
+
+### Update
+
+`ResourceFormDialog` replaces `AddResourceDialog` and serves both create and edit. In edit mode the file is optional — omitting it keeps the current document, so metadata can be corrected without re-uploading. Fields reload on open so an edit never shows the previous resource's values.
+
+Updates merge onto the existing record and go through `stripSystemFields`, because Base44's `update()` is a PUT — sending only the changed keys would blank `file_url`, `status` and the rest.
+
+### Delete, made recoverable
+
+Deleting now has two levels:
+
+- **Archive** — sets `status: "archived"`, hides it from the library, reversible.
+- **Delete permanently** — the original hard delete, kept but behind a distinct red action whose confirmation says it cannot be undone and suggests archiving instead.
+
+Both use `AlertDialog` rather than `window.confirm`, matching the rest of the app.
+
+Archived resources are listed behind an "Archived (n)" toggle with a Restore action. The panel now fetches all resources and splits by status in JS — an archive nothing can list is just a slower delete.
+
+### Actions reachable from the grid
+
+`ResourceCard` gained an admin overflow menu — Edit, Archive/Restore, Delete permanently — so management no longer requires opening a preview first. Archived cards render dimmed with an "Archived" badge. The preview dialog gained matching Edit and Archive/Restore buttons.
+
+### Duplicate page collapsed
+
+`src/pages/ResourceLibrary.jsx` was a 319-line near-verbatim copy of `ResourceLibraryPanel` — same categories, same OneDrive URL helper, same query, same preview dialog. The panel already renders a full-page layout when `embedded` is false, so the page is now a 15-line mount point. Without this the new CRUD would have existed in Policy Hub and been missing from the standalone page.
+
+### Permissions left as they are
+
+The admin gate stays `user.role === "admin"` rather than widening to `app_role`. `Resource` RLS grants create/update/delete to `role: "admin"` specifically, so widening the UI check would render controls the server rejects. Confirmed against live users: everyone with an elevated `app_role` already carries `role: "admin"`. A comment records this so it does not get "fixed" later.
+
+### Verification
+
+- `vite build` clean; no stale `AddResourceDialog` imports remain.
+- Dead state (`showAdd`, `deleting`) removed rather than left behind.
+
 ## Staff Management badge counted items the page never shows (Base44 checkpoint 6a7bb277428b533ce8e040a5)
 
 **Files changed**: `src/components/layout/useBadgeCounts.jsx`, `src/components/layout/navigationConfig.jsx`, `src/pages/Staff.jsx`
