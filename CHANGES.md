@@ -1,3 +1,42 @@
+## Manage policies from the training matrix (Base44 checkpoint 6a7ddab6f71ae967d56286ea)
+
+**Files changed**: `src/components/training/PolicyManagerPanel.jsx` (new), `src/components/training/CourseManagerDialog.jsx`, `src/pages/TrainingHub.jsx`
+
+The matrix already showed policy training alongside courses — its rows are driven by `PolicyTrainingAssignment` and it has a course/policy type filter. Only the management dialog was course-only, so policies could appear as matrix rows but not be added, renamed, archived or removed from there.
+
+"Manage Courses" is now "Manage Matrix", with **Courses** and **Policies** tabs.
+
+### Policies tab
+
+Same operations as courses: add, edit, archive/restore, delete permanently — with the staff-record count shown against each policy and named in the delete confirmation.
+
+Editable here: title, category, version, effective date, review date, summary, and whether staff must confirm they have read it.
+
+### Renames cascade to both assignment entities
+
+`PolicyTrainingAssignment` **and** `PolicyAssignment` each denormalize `policy_title` and `policy_version`. A rename or version bump offers to update both, so the matrix, reminders and certificates do not keep showing a title that no longer exists. The course side only had one entity to cascade to; policies have two, and missing either would leave half the records stale.
+
+### Scope stops at the matrix
+
+Policy wording, attachments and the approval workflow stay in Policy Hub, with a pointer to it from the panel. Reproducing the policy editor here would have created a second authoring surface to keep in step — the same divergence problem fixed earlier this session in the resource library.
+
+### PUT-safety
+
+`Policy` carries content, `version_history`, `read_by`, AI review fields and approval state, none of which this form holds. Updates merge onto the existing record through `stripSystemFields`, so editing a policy's matrix attributes cannot wipe its body or its record of who has read it.
+
+### Followed the codebase's dialog convention
+
+The delete confirmation was first written inside `DialogContent`. Nothing else in the codebase nests an `AlertDialog` inside a `Dialog` — the course delete deliberately sits outside as a sibling — so rather than introduce the first nested case and caveat it as untested, the confirmation was lifted into `CourseManagerDialog` beside the existing one. Verified no nested instance now exists anywhere in `src`.
+
+### Permissions
+
+`Policy` RLS grants create/update/delete to `role: "admin"`, and the Manage Matrix button is already gated on `adminMode`. No new controls appear that the server would reject.
+
+### Verification
+
+- `vite build` clean.
+- Nested-AlertDialog scan across all `src/**/*.jsx` returns nothing.
+
 ## Reviewed visit notes missing when filtering (Base44 checkpoint 6a7ca56ed9c37839237aecdd)
 
 **Files changed**: `src/pages/VisitNotes.jsx`
