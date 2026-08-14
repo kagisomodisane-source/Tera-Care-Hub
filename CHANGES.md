@@ -1,3 +1,32 @@
+## Visit note save/update buttons missing on desktop and tablet (Base44 checkpoint 6a7efa51b9222d9d4865c536)
+
+**Files changed**: `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/VisitNoteHeader.jsx` (deleted)
+
+### Cause — two things, both pointing the same way
+
+**1. The only action bar was `sm:hidden`.** The sticky Cancel / Save / Submit bar carried that class, so it rendered *only below 640px*. Every tablet and desktop width got nothing.
+
+**2. `VisitNoteHeader` had been reduced to `return null`.** That component received `onSubmit`, `onSaveProgress`, `isPending` and `submitLocked` — it was where the wide-screen buttons lived. Its body was gone, leaving a nine-line file with fifty-five blank lines and a full set of unused props.
+
+Between them, editing a visit note at ≥640px offered no way to save, update or cancel — the only exit was the browser back button, losing the edit.
+
+The page reserves `pb-24 sm:pb-32` at *every* width for a bottom bar. That padding is the tell: the layout still expected a bar on wide screens long after it stopped rendering there.
+
+### Fix
+
+Dropped `sm:hidden` so the bar shows at all widths, and constrained its contents to `max-w-4xl mx-auto` so the buttons sit under the form rather than stretching the full width of a desktop monitor.
+
+Deleted `VisitNoteHeader` and its render. It produced nothing, so removing it is visually a no-op — but leaving a null-rendering component wired to the submit handlers invites someone to "fix" the buttons by restoring a header that would then duplicate the bar.
+
+### No collision with the tab bar
+
+`CreateEditVisitNote` is not in `PRIMARY_TAB_PATTERNS`, so the mobile bottom tab bar does not render on this route. The action bar can sit at `bottom-0` at every breakpoint without stacking.
+
+### Verification
+
+- `vite build` clean.
+- No `VisitNoteHeader` references remain outside the explanatory comment.
+
 ## Manage policies from the training matrix (Base44 checkpoint 6a7ddab6f71ae967d56286ea)
 
 **Files changed**: `src/components/training/PolicyManagerPanel.jsx` (new), `src/components/training/CourseManagerDialog.jsx`, `src/pages/TrainingHub.jsx`
