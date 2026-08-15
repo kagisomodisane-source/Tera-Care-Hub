@@ -1,3 +1,39 @@
+## Care goals and tasks in visit note review and PDF (Base44 checkpoint 6a80f489f54a0414c304bf63)
+
+**Files changed**: `src/components/visit-notes/CarePlanReviewSection.jsx` (new), `base44/entities/VisitNote.jsonc`, `src/components/visit-notes/helpers/noteFormDataBuilder.jsx`, `src/pages/CreateEditVisitNote.jsx`, `src/pages/VisitNotes.jsx`, `src/components/visit-notes/VisitNoteExtraSections.jsx`, `src/components/visit-notes/visitNoteConstants.jsx`, `base44/functions/generateVisitNotePdf/entry.ts`
+
+### The blocker: care plan answers were never saved
+
+Adding this to the review and the PDF meant first finding out there was nothing to show. `care_plan_responses` appeared in exactly two places — `CarePlanGoalsTab` writing it into form state, and the validation hook reading it:
+
+- **not** in the `VisitNote` schema
+- **not** in `buildSubmitPayload`, which is an explicit whitelist of every field
+
+So every answer a carer gave on the Care Plan tab was discarded on save, and always had been. The previous change made those answers **mandatory**, which meant carers were being required to fill in a section that was then thrown away. That is on me — the requirement should not have gone in without checking the data persisted.
+
+### `care_plan_review`
+
+A new object field on `VisitNote` holding a point-in-time snapshot: plan id and title, active goals (title, target outcome, category, priority), and each active task with its prompt, linked goal, required flag, the carer's response and notes.
+
+Denormalised deliberately. Reading titles from the live care plan would mean a note reviewed months later showed goals and wording that were not in force on the day — for a care record, the document has to say what was actually asked at the time.
+
+Built on submit from `care_plan_responses` plus the active plan, and unpacked back into keyed form state on edit so answers round-trip. If no plan is loaded (offline, or the plan was since removed) the raw answers are kept rather than dropped.
+
+### Review
+
+New `CarePlanReviewSection` above the general field list in the review dialog: goals with category and priority, then each task showing its response — green where recorded, amber and "Not recorded" where not — with a `n/n recorded` count in the header. `care_plan_review` is excluded from the generic field dump so it does not also appear as a raw object.
+
+### PDF
+
+Two sections ahead of "Tasks Completed": **Care Goals** (with target outcome, category, priority) and **Care Plan Tasks** headed `(n of n recorded)`, each task listing its linked goal, response, and notes. Unrecorded tasks print "Not recorded" rather than being omitted — a blank in a care document should be visible, not silent.
+
+Both sections render only when the snapshot has content, so existing notes are unaffected.
+
+### Verification
+
+- Live entity schema confirms `care_plan_review` and its sub-fields.
+- All backend functions parse under esbuild; `vite build` clean.
+
 ## Allocated tasks and care plan tasks are now mandatory in visit notes (Base44 checkpoint 6a807ffd7d93b1da393815cc)
 
 **Files changed**: `src/components/visit-notes/hooks/useVisitNoteValidation.jsx`, `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/VisitNoteTabContent.jsx`, `src/components/visit-notes/VisitNoteFormPersonalCareTab.jsx`, `src/components/care-plans/CarePlanGoalsTab.jsx`
