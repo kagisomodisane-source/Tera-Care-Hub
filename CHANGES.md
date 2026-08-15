@@ -1,3 +1,39 @@
+## Allocated tasks and care plan tasks are now mandatory in visit notes (Base44 checkpoint 6a807ffd7d93b1da393815cc)
+
+**Files changed**: `src/components/visit-notes/hooks/useVisitNoteValidation.jsx`, `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/VisitNoteTabContent.jsx`, `src/components/visit-notes/VisitNoteFormPersonalCareTab.jsx`, `src/components/care-plans/CarePlanGoalsTab.jsx`
+
+Planned work could previously be submitted unaccounted for: a shift could carry allocated tasks and a client could have an active care plan, and the note would submit with neither recorded.
+
+Two conditional requirements added. They follow the pattern already used for resident and client daily notes — required because the data exists for *this* visit, not because an admin listed them in `mandatory_fields`.
+
+| Trigger | Requirement | Tab |
+|---|---|---|
+| `shift.tasks` is non-empty | `tasks_completed` must be filled | Personal Care |
+| Active care plan has `care_tasks` | Every active task needs a response | Care Plan |
+
+Both appear the same way as every other mandatory field: red asterisk and dot on the tab, the item listed in the Mandatory Fields banner, counted in the completion total, and blocking submit.
+
+### Allocated tasks are shown, not just demanded
+
+The Personal Care tab now lists the shift's allocated tasks above the field, as tappable chips that append to `tasks_completed` and turn green once recorded. Requiring the carer to retype work that the roster already knows about would be a good way to guarantee it gets typed carelessly. The label switches from "Other Tasks Completed" to "Tasks Completed" with an asterisk when tasks are allocated.
+
+### Care plan tab
+
+Each task carries an asterisk and unanswered ones are highlighted amber. `CarePlanGoalsTab` already accepted a `mandatoryFields` prop it never used; it now takes `requireResponses`.
+
+### Goals
+
+Care goals are read-only on this tab — progress against them is recorded through the tasks linked to them (`linked_goal_id`). A plan with goals but no tasks therefore has nothing to fill in and does not block submission. Making goals themselves mandatory would mean inventing an input that does not exist, which is a care-recording decision rather than a UI one.
+
+### Fetching
+
+The care plan is fetched in the page under the same query key `["carePlansForVisit", clientId]` that `CarePlanGoalsTab` already uses, so React Query serves both from a single request rather than duplicating it.
+
+### Verification
+
+- Both checks replayed against a table of cases — empty, partial, complete, whitespace-only, and inactive tasks — 10/10 as expected.
+- `vite build` clean.
+
 ## Visit note save/update buttons missing on desktop and tablet (Base44 checkpoint 6a7efa51b9222d9d4865c536)
 
 **Files changed**: `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/VisitNoteHeader.jsx` (deleted)
