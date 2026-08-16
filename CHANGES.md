@@ -1,3 +1,46 @@
+## Visit notes bug scan (Base44 checkpoint 6a818360e6694d8cdfee3c43)
+
+**Files changed**: `src/pages/MyVisitNotes.jsx`, `src/components/visit-notes/hooks/useVisitNoteData.jsx`
+
+Scanned ~16,300 lines across `VisitNotes.jsx`, `MyVisitNotes.jsx`, `CreateEditVisitNote.jsx` and the 40-odd `components/visit-notes` files. Three real bugs, all silent.
+
+### 1. Resident notes never loaded on My Visit Notes
+
+```js
+VisitNote.filter({ created_by: user.email, visit_type: 'resident_note' }, ...)
+```
+
+A two-field compound filter. Base44 returns `[]` for these — the constraint annotated in a dozen places in this repo. The result feeds `residentNotesByShift`, which attaches resident notes to their parent note, so a carer working an organisation site could never see the resident notes they had written. Now a single-field filter narrowed in JS.
+
+### 2. Team shift colleague notes never loaded
+
+```js
+Shift.filter({ team_shift_id: shift.team_shift_id, status: "completed" })
+```
+
+Same fault. `teamShiftVisitNotes` — the feature that shows what colleagues recorded on the same team shift — has never returned anything.
+
+### 3. Older visit notes vanished from a carer's own page
+
+`allUserShifts` fetches the 200 most recent shifts. `visitNotes` then dropped any note whose `shift_id` was not in that set, on the reasoning that the shift had been deleted or cancelled.
+
+Absence from a capped, newest-first window does not mean deleted. Rosemary Chimombegweshe has **500+ shifts**, so her older notes were being hidden from her with no indication why — and because the sort is newest-first, future scheduled shifts consume the window before past ones.
+
+Now only notes whose shift is *positively observed* to be cancelled are hidden; the shift window was also raised to 500.
+
+### Checked and found not to be bugs
+
+**Partial `VisitNote.update()` calls.** Five call sites send only the fields they change — the review mutation, the AI analysis save, the MAR sync, and the submit hooks. Rather than assume the PUT-replace semantics seen elsewhere, this was verified against live data: note `6a8047a36a60115f80391897` has been through both a partial review update and a partial OneDrive marker update, and still holds its `observations`, `visit_type` and `status`. Updates merge. No change made.
+
+This also means the claim in the mileage entry — that editing a claim *erased* the approval trail and GPS provenance — was overstated. The merge added there is harmless and still reasonable defensive practice, but data was not being wiped.
+
+**`initialData: []` with `staleTime: 0`.** Safe: zero stale time means the query fetches immediately, unlike the badge-count regression where a non-zero stale time suppressed the first fetch.
+
+### Verification
+
+- Compound-filter scan across all visit-note files now returns nothing.
+- `vite build` clean; dead `validShiftIds` removed rather than left behind.
+
 ## Care goals and tasks respect start/end dates (Base44 checkpoint 6a810074adc8238a56ea1ade)
 
 **Files changed**: `src/components/care-plans/carePlanScheduling.jsx` (new), `base44/entities/CarePlan.jsonc`, `src/pages/CreateEditVisitNote.jsx`, `src/components/care-plans/CarePlanGoalsTab.jsx`, `src/components/visit-notes/VisitNoteTabContent.jsx`, `src/components/visit-notes/helpers/noteFormDataBuilder.jsx`
