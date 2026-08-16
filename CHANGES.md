@@ -1,3 +1,44 @@
+## Care task requirement was bypassed on submit (Base44 checkpoint 6a81f33acbc843a046a453b2)
+
+**Files changed**: `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/hooks/useVisitNoteValidation.jsx`
+
+The submit gate itself was fine — `handleSubmit` calls `areAllMandatoryFieldsCompleted()` and returns early. It was passing because the care plan never loaded, so the form believed there were no care tasks to require.
+
+### Root cause: the client id was resolved the one way that can fail
+
+```js
+const carePlanClientId = selectedClient?.id || editingNote?.client_id || null;
+```
+
+`selectedClient` finds the shift in `allUserShifts`, then finds that shift's client in the fetched `clients` list. Both lookups have to succeed.
+
+When a carer opens a note **from a shift link** — the usual route in from a shift — the shift arrives as `directShift`, which is deliberately not in `allUserShifts`. `selectedClient` returned null, `carePlanClientId` was null, the care plan query was disabled, `carePlanTasks` was empty, and nothing was mandatory. The note submitted straight through.
+
+Confirmed against Joanne Clitheroe's live plan (2 active tasks, 2 goals): on that route the form saw **0 care tasks**.
+
+The id now comes from the shift, which always carries `client_id` and already handles `directShift`. `selectedClient` was given the same `directShift` fallback, since org detection, layout config and the MAR schedule all depend on it too.
+
+### Second gap: no plan meant "nothing required", including while loading
+
+`carePlanPending` is now passed into validation. While a client is known and the plan is still being fetched, submission is held rather than reporting nothing outstanding — otherwise a slow connection lets the note through before the requirement is known.
+
+### Third: the submit handlers closed over a stale plan
+
+`handleSubmit` and `handleSaveProgress` both call `buildSubmitPayload(..., activeCarePlan, carePlanItemsForVisit)` but listed neither in their `useCallback` deps. A carer who filled the form and pressed Submit without touching anything after the plan resolved would have written a `care_plan_review` built from an empty plan — losing the snapshot even when validation had passed. Both dependency arrays corrected.
+
+### Verification
+
+Replayed the shift-link route against Joanne's real care plan:
+
+| | client id | care tasks seen | submit blocked |
+|---|---|---|---|
+| Before | `null` | 0 | **no** |
+| After | `69041f2f…` | 2 | **yes** |
+| After, both answered | — | 2 | no |
+| After, plan still loading | — | — | **yes** |
+
+`vite build` clean.
+
 ## Visit notes bug scan (Base44 checkpoint 6a818360e6694d8cdfee3c43)
 
 **Files changed**: `src/pages/MyVisitNotes.jsx`, `src/components/visit-notes/hooks/useVisitNoteData.jsx`
