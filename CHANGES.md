@@ -1,3 +1,38 @@
+## Care goals and tasks respect start/end dates (Base44 checkpoint 6a810074adc8238a56ea1ade)
+
+**Files changed**: `src/components/care-plans/carePlanScheduling.jsx` (new), `base44/entities/CarePlan.jsonc`, `src/pages/CreateEditVisitNote.jsx`, `src/components/care-plans/CarePlanGoalsTab.jsx`, `src/components/visit-notes/VisitNoteTabContent.jsx`, `src/components/visit-notes/helpers/noteFormDataBuilder.jsx`
+
+### Two ways the wrong care plan content was reaching a note
+
+**The plan was chosen as the newest active one.** It is fetched sorted by `-effective_date` and the first result taken — so a plan that comes into force *next month* sorts first and was applied to today's visit, and to backdated ones. Now the plan in force on the visit date is selected: active, with `effective_date` on or before that day, most recent first.
+
+**Goals and tasks had only `is_active`.** No dates existed on them at all, so a task added last week appeared on a note written for last month, and stopping a task removed it from the historical notes that had recorded it.
+
+`start_date` and `end_date` are now on both `care_tasks` and `structured_goals`. Both bounds inclusive; blank means open-ended in that direction. `is_active === false` still retires an item outright regardless of dates — it is the existing flag and stays authoritative.
+
+### Applied everywhere the items are used
+
+The visit date (from the shift, or the note being edited) drives all four:
+
+| Where | Effect |
+|---|---|
+| Care Plan tab | The carer only sees goals and tasks that applied on the day |
+| Mandatory validation | Only those tasks are required — no asterisk for work that had not started |
+| `care_plan_review` snapshot | Only those are written into the note, so review and PDF match |
+| Plan selection | The plan in force on the visit date, not the newest |
+
+### Visit-type scoping
+
+`care_tasks` already had a `visit_types` field that nothing honoured. A task scoped to medication visits was being demanded on a domestic call. Tasks naming specific visit types now only apply when the note's visit type matches; unscoped tasks always apply.
+
+### One deliberate fallback
+
+When *every* active plan is future-dated — a new client whose plan starts next week — the earliest is used rather than showing nothing. Returning no plan would leave the carer with an empty tab and no indication why.
+
+### Verification
+
+14 cases covering item windows (no dates, starts after, starts on the day, ended before, ends on the day, inside, `is_active` override), plan selection (current vs future, backdated, non-active ignored, all-future fallback) and visit-type scoping — all as expected. `vite build` clean; `CarePlan.jsonc` parses.
+
 ## Care goals and tasks in visit note review and PDF (Base44 checkpoint 6a80f489f54a0414c304bf63)
 
 **Files changed**: `src/components/visit-notes/CarePlanReviewSection.jsx` (new), `base44/entities/VisitNote.jsonc`, `src/components/visit-notes/helpers/noteFormDataBuilder.jsx`, `src/pages/CreateEditVisitNote.jsx`, `src/pages/VisitNotes.jsx`, `src/components/visit-notes/VisitNoteExtraSections.jsx`, `src/components/visit-notes/visitNoteConstants.jsx`, `base44/functions/generateVisitNotePdf/entry.ts`
