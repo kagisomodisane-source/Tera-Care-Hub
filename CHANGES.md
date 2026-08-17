@@ -1,3 +1,67 @@
+## My Shifts / My Visit Notes showed the wrong data at random (Base44 checkpoint 6a827b0ecf46c54227b33c7c)
+
+**Files changed**: `src/components/offline/useOfflineQuery.jsx`, `src/components/offline/OfflineStorage.jsx`, `src/components/offline/ShiftDataPreloader.jsx`, `src/components/pwa/CacheStrategy.jsx`, `src/pages/MyShifts.jsx`, `src/pages/MyVisitNotes.jsx`, `src/pages/StaffDashboard.jsx`, `src/pages/MyProfile.jsx`, `src/components/visit-notes/hooks/useVisitNoteData.jsx`
+
+The behaviour was random because it depended on which page the user had visited last. Two separate collisions, both of them "different queries sharing one storage slot".
+
+### Cause 1 — the offline cache was keyed by entity, not by query
+
+```js
+const cacheKey = storeName || JSON.stringify(queryKey);
+```
+
+`saveToCache(key, value)` writes one record into a single `cache` object store. Keying it by `storeName` meant every query naming the same store wrote to the **same record**. Eight writers shared `shifts`:
+
+| Writer | What it holds |
+|---|---|
+| `MyShifts` `['myUpcomingShifts', email]` | the carer's assigned shifts, 500 |
+| `MyShifts` `['openShifts']` | shifts open for bidding — **other people's** |
+| `MyVisitNotes` `['allUserShifts', email]` | the carer's shifts, unfiltered |
+| `StaffDashboard` `['myShifts', email]` | 60, status-filtered |
+| `Dashboard` `['shifts', email]` | dashboard slice |
+| `ShiftManagement` `['shifts']` | **every shift in the company**, 1000 |
+| `ShiftDataPreloader` | background preload, bare `'shifts'` key |
+| `pwa/CacheStrategy` | background preload, `STORES.SHIFTS` |
+
+`visitNotes`, `clients` and `clientLocations` were shared the same way. Whichever ran last owned the slot, and on the next visit the hydration effect seeded the page from it — so My Shifts could paint the company-wide roster or the open-bidding list before the real fetch corrected it, and My Visit Notes could paint resident notes only. Offline there is no correction: the wrong data is what you get.
+
+Cache keys are now `<store>::<queryKey>`, one record per query. Long keys are hashed — MyShifts joins every visible shift id into its notes key, which would otherwise mint a kilobyte-sized IndexedDB key and a new record on every roster change; that query also pins an explicit stable `cacheKey`.
+
+Two further fixes fell out of it:
+
+- **Hydration only ever ran for the first key.** A single `hydratedRef` boolean latched after the first hydration, so when a query key changed while mounted (an email resolving, a shift list changing) the new key was never seeded. It now tracks hydrated keys in a set.
+- **`clearCache(entityName)` never deleted anything.** It removed the literal key `` `${entityName}:list` ``, a format nothing has ever written. It now deletes every key under the entity's prefix.
+
+`pruneExpiredCache()` was added and runs once per session on first cache write, since the number of distinct keys now grows with usage rather than being fixed at one per entity. Its 24h default is deliberately longer than the 6h read expiry, so it only deletes entries reads already treat as gone.
+
+### Cause 2 — three different queries claimed `['myVisitNotes', email]`
+
+React Query dedupes by key, so the first mount wins and a later component with the same key but a different fetch gets the earlier one's data:
+
+| Page | Fetch | Refetch behaviour |
+|---|---|---|
+| My Visit Notes | 500, no archived, no resident notes | `staleTime: 0`, refetches on mount |
+| Staff Dashboard widget | 100 fetched, sliced to **20** | `staleTime: 5min`, `refetchOnMount: false` |
+| Visit note editor | 500, **keeps archived** | `staleTime: 30s` |
+
+Dashboard first → My Visit Notes opened showing 20 notes before correcting itself. My Visit Notes first → the dashboard widget rendered all 500 and, with `refetchOnMount: false`, never corrected. Editor first → the notes page briefly listed archived notes; notes page first → the editor could not find an archived note by id.
+
+`['myShifts', email]` had the same problem between the staff dashboard (60, status-filtered) and My Profile (100, every status) — visiting the profile left the dashboard showing cancelled and unassigned shifts.
+
+The odd ones out are now scoped: `['myVisitNotes', email, 'dashboard']`, `['myVisitNotes', email, 'editor']`, `['myShifts', email, 'profile']`. The prefix is unchanged, so every existing `invalidateQueries(['myVisitNotes'])` and the optimistic-update keys in `useOfflineCareActions` still reach them.
+
+### Cause 3 — `['clients']` and `['clientLocations']` were the same key with different fetches
+
+My Shifts and My Visit Notes asked for 100; Shift Management asks for 500. Same key, so a carer's client name and visit address resolved or came up blank depending on where they had just been — and with only 100 clients loaded, anyone outside the 100 most recently created never resolved at all. All three now issue the identical query (`Client.list('full_name', 500)`, `ClientLocation.list('-created_date', 500)`), which makes the shared key correct rather than merely convenient.
+
+### Background preloaders were part of the corruption
+
+`ShiftDataPreloader` wrote `saveToCache('shifts', …)` and `pwa/CacheStrategy` wrote `saveToCache(STORES.SHIFTS, …)` — both byte-identical to the key the query layer used. Every 15 minutes the preloader silently overwrote the cached results of whatever page the carer was on. Both now write under a `preload::` namespace.
+
+One consequence worth flagging: with keys separated, nothing reads those preloaded blobs any more. They were only ever "working" by colliding with the query cache. `ShiftDataPreloader`'s MAR-schedule caching is still read by `OfflineMedicationManager` and stays useful, but the shift/client/note/task fetches in both files are now background API calls whose output has no reader — they should be reworked to warm the real per-query keys, or retired.
+
+Verified: `vite build` clean.
+
 ## Care task requirement was bypassed on submit (Base44 checkpoint 6a81f33acbc843a046a453b2)
 
 **Files changed**: `src/pages/CreateEditVisitNote.jsx`, `src/components/visit-notes/hooks/useVisitNoteValidation.jsx`
