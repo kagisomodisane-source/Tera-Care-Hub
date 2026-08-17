@@ -1,3 +1,55 @@
+## The same key-collision bug, app-wide (Base44 checkpoint 6a829b4f6e9ea766eb587b62)
+
+**Files changed**: 43 files across `src/`, plus `scripts/audit-query-keys.mjs` (new) and `package.json`
+
+The My Shifts / My Visit Notes fix treated instances. This is the class. React Query caches by key alone, so two components using one key with different fetches do not each get an entry — the first to mount owns it, and the second renders whatever the first put there until its own fetch lands, or indefinitely if it has `refetchOnMount: false` and the data is still fresh. Nothing in the codebase prevented that, and keys were written by hand at ~250 call sites.
+
+### What the audit found
+
+Extracting every query definition and grouping by key identity: **27 keys were shared by call sites that fetch different rows.** Not near-misses — genuinely different data:
+
+| Key | Fetches sharing it |
+|---|---|
+| `['clients']` | 17 sites: limits of 100/300/500/1000, three sort orders, and one `filter({status:'active'})` — meaning any page could end up rendering **active clients only** |
+| `['staff']` | 13 sites: unbounded `User.list()` against limits of 100, 200 and 300 |
+| `['clientLocations']` | 8 sites: 50, 100, 500, 1000, unbounded |
+| `['allShifts']` | 3 sites meaning three different things: completed shifts, open-for-bidding shifts, and all 1000 |
+| `['allUsers']` | Chat's `getChatUsers` backend function against raw `User.list()` |
+| `['completedShifts']` | one site actually filtered to completed; the other two fetched every shift |
+| `['audits']`, `['complaints']`, `['safeguarding']`, `['compliments']` | dashboards at 100 against CQC trend analysis at 200 — the trend chart silently losing half its history, or the dashboards silently counting twice as much |
+
+Plus `['invoices']`, `['leaveRequests']`, `['myLeaveRequests']`, `['mySubmissions']`, `['myTrainingAssignments']`, `['myPolicyAssignments']`, `['policyWorkflows']`, `['shifts']`, `['staffList']`, `['allStaff']`.
+
+### The fix: a key must identify the data
+
+53 call sites were separated. The site whose fetch matches the canonical definition keeps the bare key; every other fetch gains a suffix naming what it actually is — `['clients', 'active']`, `['clients', 'recent', 100]`, `['staff', 'byUpdated', 300]`, `['allShifts', 'openForBidding']`.
+
+**No page's data or ordering changed.** This is deliberately a key-space fix: consolidating 17 client fetches into one would have altered what a dozen pages display. The suffix always follows the original first element, so all ~40 existing prefix-based `invalidateQueries({ queryKey: ['clients'] })` calls still reach every variant.
+
+Three call sites needed more than a suffix, because they used **exact-key** cache writes rather than prefix invalidation:
+
+- `ClientProfile` optimistically patched `['clients']` on save, but renders `['clients','byUpdated',100]`. It was writing to an entry it does not display — it only appeared to work when another page's fetch happened to own the slot.
+- `MARChart`, rendered by ClientProfile, had the same defect on medication administration. Recording a dose patched a list nobody was showing.
+- Both now go through `queryKeys.clients.byUpdated(100)`, and `queryKeys.jsx` gained the client variants so the key has one definition.
+
+Two keys were also lying about their contents: Dashboard's `['shifts', user?.email]` is the 100 most recent shifts **company-wide**, and `['visitNotes', user?.email]` is every unreviewed note in the service. Both were keyed as if user-scoped, one id collision away from the genuinely client-scoped `['shifts', <id>]` queries. Renamed to say what they hold.
+
+### A latent trap in dead code
+
+`useOptimizedShifts.jsx` — imported by nothing — claimed `queryKeys.shifts.upcoming(email)`, the key the My Shifts page owns, and filled it with `Shift.filter({ assigned_to, status: { $in: [...] } })`. That is a **compound filter, which Base44 silently returns `[]` for** (annotated in roughly a dozen places in this repo). Had that hook ever been wired up, My Shifts would have rendered an empty list whenever it mounted first. Its keys are now scoped and both hazards are documented in the file. It is still dead code and worth deleting.
+
+### A guard, and the guard's own bug
+
+`npm run audit:query-keys` fails when two query definitions share a key with different fetches, listing every offending site.
+
+Its first version passed a deliberately reintroduced collision. The reason is worth recording: keys are written both as array literals and through the factories in `queryKeys.jsx` / `offlineDatasets.jsx`, and the script bucketed those separately — so a literal `['clients']` and a `queryKeys.clients.all()` fetching different rows sat in different groups and never compared. It now resolves factory calls (and spreads of them) to the literal key they produce.
+
+Re-running with that fixed immediately surfaced three more collisions the original bucketing had hidden, including the dead-code one above. Shift Management's client and location queries now call the same shared fetchers as My Shifts and My Visit Notes, so the canonical key has exactly one definition across all three pages.
+
+Both regression tests now fail the guard as they should, and the baseline is clean.
+
+Verified: `vite build` clean; `npm run audit:query-keys` clean; eslint reports nothing new on the changed files (remaining errors are pre-existing unused imports).
+
 ## Offline preloaders now warm the keys the app actually reads (Base44 checkpoint 6a8284485bb582a5c1127198)
 
 **Files changed**: `src/components/offline/offlineDatasets.jsx` (new), `src/components/offline/ShiftDataPreloader.jsx`, `src/components/pwa/CacheStrategy.jsx`, `src/pages/MyShifts.jsx`, `src/pages/MyVisitNotes.jsx`, `src/pages/StaffDashboard.jsx`
