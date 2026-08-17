@@ -1,3 +1,43 @@
+## Offline preloaders now warm the keys the app actually reads (Base44 checkpoint 6a8284485bb582a5c1127198)
+
+**Files changed**: `src/components/offline/offlineDatasets.jsx` (new), `src/components/offline/ShiftDataPreloader.jsx`, `src/components/pwa/CacheStrategy.jsx`, `src/pages/MyShifts.jsx`, `src/pages/MyVisitNotes.jsx`, `src/pages/StaffDashboard.jsx`
+
+Follow-on from the cache-key fix. Once each query owned its own cache record, the two background preloaders were left writing to a namespace nothing reads — they had only ever appeared to work by colliding with the query cache.
+
+### One definition, used by both sides
+
+`components/offline/offlineDatasets.jsx` now holds the fetchers, selectors and keys for every carer-facing dataset. The pages build their queries from it and `warmOfflineCaches()` writes through the same definitions, so the preloaded value under a key is by construction what that query would have fetched. The old arrangement had the preloader running its own near-copies — `Shift.filter(…, 50)` against the page's 500, `VisitNote.list(…, 50)` against the page's 500 — which would have drifted from the pages even if the keys had been right.
+
+Nine datasets are warmed from six requests; the dashboard slices and the resident/non-resident note split are derived rather than re-fetched:
+
+| Cache key | Warmed from |
+|---|---|
+| `['myUpcomingShifts', email]` | `fetchMyShifts` → `selectUpcomingShifts` |
+| `['allUserShifts', email]` | `fetchMyShifts` |
+| `['myShifts', email]` (dashboard) | `fetchMyShifts` → `selectDashboardShifts` |
+| `['openShifts']` | `fetchOpenShifts` |
+| `['myVisitNotes', email]` | `fetchMyNotes` → `selectMyVisitNotes` |
+| `['residentNotes', email]` | `fetchMyNotes` → `selectResidentNotes` |
+| `['myVisitNotes', email, 'dashboard']` | `fetchRecentNotes` → `selectDashboardNotes` |
+| `visitNotes::myShiftsNotes:<email>` | `fetchRecentNotes` → `selectNotesForShiftIds` |
+| `['clients']`, `['clientLocations']` | `fetchClients`, `fetchClientLocations` |
+
+The two derivations are exact, not approximations: both the dashboard's 60 shifts and its 100-note window are prefixes of the 500 the warm pass already holds, because each is ordered by the same field.
+
+### Dead caches retired rather than renamed
+
+`preCacheEssentialData` was fetching tasks, chat rooms and messages every startup and writing them to `STORES.TASKS` / `CHAT_ROOMS` / `MESSAGES`. Nothing in the app has ever read those back — no `getFromCache` call and no direct store read targets them. They were request volume with no consumer, so they are dropped. The comment at the call site says to re-add them if an offline chat or task view ever needs them.
+
+`preCacheEssentialData` and `ShiftDataPreloader` were also near-duplicates of each other. Both now delegate to the one warm pass; the PWA path keeps its `last_cache_time` / `cache_user_email` metadata, and the interval path keeps the MAR-schedule caching, which does have a reader (`OfflineMedicationManager`).
+
+### Fewer requests than before
+
+MAR schedules used to cost one `Client.get` per rostered client per cycle, every 15 minutes. They now come out of the client list the warm pass already fetched. Across both files the pass went from roughly 11 requests plus N per-client gets, to 6.
+
+The 429 backoff that lived in `preCacheEssentialData` was kept and moved into the warm pass, where it now covers all six fetches instead of that one path. A dataset that still fails is left uncached rather than failing the run.
+
+Verified: `vite build` clean; `eslint` reports nothing on the changed offline files (the remaining errors on the three pages are pre-existing unused imports).
+
 ## My Shifts / My Visit Notes showed the wrong data at random (Base44 checkpoint 6a827b0ecf46c54227b33c7c)
 
 **Files changed**: `src/components/offline/useOfflineQuery.jsx`, `src/components/offline/OfflineStorage.jsx`, `src/components/offline/ShiftDataPreloader.jsx`, `src/components/pwa/CacheStrategy.jsx`, `src/pages/MyShifts.jsx`, `src/pages/MyVisitNotes.jsx`, `src/pages/StaffDashboard.jsx`, `src/pages/MyProfile.jsx`, `src/components/visit-notes/hooks/useVisitNoteData.jsx`
