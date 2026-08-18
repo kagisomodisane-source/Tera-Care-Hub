@@ -1,52 +1,52 @@
-## The organisation picker listed nothing (Base44 checkpoint 6a83b1c0ba27310c7cc80c4c)
+## Recurring and bulk shift bugs (Base44 checkpoint 6a83d2e795a2816dd604d3cb)
 
-**Changed**: `src/components/clients/ClientResidencyPanel.jsx`
+**New**: `src/components/shifts/recurrence.js`, `scripts/verify-recurrence.mjs`
+**Changed**: `ShiftCreateDialog.jsx`, `RecurrenceSettings.jsx`, `BulkShiftCreatorDialog.jsx`, `ShiftManagement.jsx`, `base44/functions/createBulkShifts/entry.ts`, `base44/functions/bulkReassignShifts/entry.ts`
 
-My own bug, from the previous change. I wrote the picker's queries as:
+Every bug below was reproduced against the old code before it was changed, and each has a regression test that fails when the fix is reverted.
+
+### Recurring shifts
+
+There were two different implementations of the date maths — one in `ShiftCreateDialog` that created the shifts, one in `RecurrenceSettings` that drew the preview — so the preview did not show what you would get. Both now call one shared module.
+
+Reproduced against the old code, starting from Wednesday 2 September 2026:
+
+| Asked for | Got |
+|---|---|
+| Weekly, Mondays only, 4 shifts | **0 shifts** — "No valid dates generated" |
+| Biweekly, Mon+Wed, 6 shifts | Wed 2, **Mon 7**, Wed 16, **Mon 21**… — dates from the skipped week |
+| Monthly from the 31st, 5 shifts | 31 Jan, 28 Feb, **28 Mar, 28 Apr, 28 May** |
+| Nightly 22:00–06:00 over the clock change | one night silently became **22:00–07:00** |
+
+- **Weekly produced nothing at all** whenever the chosen day was not the start day. It stepped forward seven days at a time while only accepting dates whose weekday was in the selected set — and +7 lands on the same weekday forever, so a Monday-only pattern starting on a Wednesday never matched.
+- **The preview had the same stepping and no exit** when nothing matched: `count` never incremented and no break condition could fire, so it span forever. Picking such a day froze the tab.
+- **Biweekly** measured fortnights as 7-day blocks counted from the start timestamp rather than calendar weeks, so it emitted off-week dates.
+- **Monthly** called `addMonths` on the previous occurrence, so February clamped the 31st to the 28th and every later month inherited it.
+- **Overnight shifts across a clock change** set each end to start + elapsed milliseconds, so a 22:00–06:00 shift became 22:00–07:00 while `scheduled_duration_minutes` still said eight hours — the stored fields disagreed with each other.
+
+Times are now treated as wall-clock, which is what a rota means: 22:00–06:00 stays 22:00–06:00 through a clock change and that night carries its own real duration (420 minutes, not 480). The preview renders the actual occurrences the dialog will create, so the two cannot drift apart again.
+
+`ShiftCreateDialog` also stopped writing `duration_minutes` — that field is the time actually worked, written by `clockShift` on clock-out.
+
+### Bulk shifts
+
+**Bulk status change and bulk time change could never have worked.** `Shift.update()` is `axios.put`, a full replace, and both sent partial payloads:
 
 ```js
-enabled: showLinkDialog,
-initialData: [],
+base44.entities.Shift.update(id, { status: newStatus })
 ```
 
-`initialData` seeds the cache with an empty array stamped **fresh as of now**. The observer mounts with `enabled: false`, so nothing fetches. When the dialog opens and `enabled` flips true, TanStack sees data that is still fresh under the app's global `staleTime: 2 * 60 * 1000` and skips the fetch entirely. `refetchOnMount: 'always'` doesn't rescue it, because enabling an existing observer is not a mount.
+`Shift` requires `client_id`, `start_datetime` and `end_datetime`, so a PUT carrying only `{status}` cannot validate — the update is rejected and nothing changes. `bulkReassignShifts` had the same defect in three places. All now merge onto the record they already fetched.
 
-The result is a picker that is permanently empty for the first two minutes, with no error and no spinner — the query function never runs at all.
+**Bulk-created shifts landed an hour out during BST.** `createBulkShifts` built `new Date(y, m, d, 9, 0)` on the server and stored `toISOString()`. The function runs in UTC, so a 09:00 shift was pinned to 09:00Z — 10:00 in London during summer — and disagreed with the same shift made in the normal dialog, which builds its dates in the browser. The dates are now resolved client-side, where the offset for that particular date is known, which also handles a week containing the clock change (verified: 23 March 09:00 → 09:00Z, 29 March 09:00 → 08:00Z, both still reading 09:00 on the rota). The old server-side path is kept for older callers.
 
-Confirmed against the app's real QueryClient defaults rather than by inspection:
+It also wrote `duration_minutes` on drafts nobody had worked, which would make an untouched draft look like completed work to the timesheet and reporting screens. Removed; only `scheduled_duration_minutes` is set.
 
-```
-WITH initialData: []    queryFn ran: 0 time(s)   rows shown: 0
-WITHOUT initialData     queryFn ran: 1 time(s)   rows shown: 2
-```
+The dialog now rejects zero-length and duplicate time slots, states that a slot ending before it starts becomes an overnight shift, and counts the shifts it will actually create rather than assuming days × slots.
 
-The fix is to drop `initialData` and keep only the `= []` destructuring default, which renders the same empty list without poisoning the cache. Both the organisation and location queries had it. Their empty-state messages now also distinguish loading from genuinely empty, instead of claiming "No organisations have been set up yet" while the fetch is still in flight.
+### Verification
 
-### The same trap is set in 42 other places
+`npm run verify:recurrence` — 53 checks covering all of the above plus end conditions, caps and malformed input. Mutation-tested: restoring the weekly +7 stepping, the monthly walk-from-previous, the biweekly parity drop, the server-side UTC construction, and the shared-duration bug each make the suite fail on the specific check that names the behaviour.
 
-Sweeping for `useQuery` blocks that combine `enabled` with `initialData` finds 42 across `src/`. The pattern only bites when `enabled` is false on first render, which is exactly the shape of every "my ..." page — the query is gated on `user?.email` while the user is still loading:
-
-```js
-// src/pages/MyTimesheets.jsx
-const { data: timesheets = [] } = useQuery({
-  queryKey: ['myTimesheets', user?.email],
-  enabled: !!user,        // false until the async auth.me() resolves
-  initialData: []
-});
-```
-
-I assumed the changing query key would save these — the key goes from `['myTimesheets', undefined]` to `['myTimesheets', 'staff@example.com']` as the user arrives. It does not:
-
-```
-static key + enabled flip        fetches: 0   rows: 0   <-- EMPTY
-key changes as it enables        fetches: 0   rows: 0   <-- EMPTY
-```
-
-Switching an existing observer to a new key does not count as a mount either, and `initialData` is applied to the new key just as fresh. So the affected pages show nothing for two minutes unless something else invalidates them first.
-
-Not all 42 are live: where the gate is already true on first render (`enabled: !!staffEmail` with the id from the URL, as in StaffProfile) the query mounts enabled and `refetchOnMount: 'always'` fires normally. The broken subset is those gated on asynchronously-loaded state.
-
-Left alone pending a decision — it touches many pages and is well beyond fixing the picker.
-
-Verified: `vite build` clean; `npm run verify:residency` 47/47; `npm run audit:query-keys` clean; eslint clean.
+Verified: `vite build` clean; `verify:recurrence`, `verify:residency` and `audit:query-keys` all pass; eslint clean on the new files (the remaining errors on touched files are pre-existing unused imports, unchanged in count).
 
