@@ -1,52 +1,37 @@
-## Recurring and bulk shift bugs (Base44 checkpoint 6a83d2e795a2816dd604d3cb)
+## The initialData trap, cleared app-wide (Base44 checkpoint 6a83dc1665c0568053f1e660)
 
-**New**: `src/components/shifts/recurrence.js`, `scripts/verify-recurrence.mjs`
-**Changed**: `ShiftCreateDialog.jsx`, `RecurrenceSettings.jsx`, `BulkShiftCreatorDialog.jsx`, `ShiftManagement.jsx`, `base44/functions/createBulkShifts/entry.ts`, `base44/functions/bulkReassignShifts/entry.ts`
+**Changed**: 28 files, 42 queries. **New**: `scripts/audit-query-initial-data.mjs`
 
-Every bug below was reproduced against the old code before it was changed, and each has a regression test that fails when the fix is reverted.
+This is the bug that made the organisation picker list nothing, applied to every other place it was set. `initialData` writes its value into the cache stamped fresh as of now. A query that mounts with `enabled: false` fetches nothing; when the gate opens, React Query sees data still fresh under the app's global `staleTime` of two minutes and skips the fetch. The queryFn never runs — no error, no spinner, just an empty list.
 
-### Recurring shifts
+Neither escape hatch applies. `refetchOnMount: 'always'` doesn't fire because enabling an existing observer is not a mount, and the query key changing at the same moment doesn't help either — verified directly against the app's real QueryClient defaults:
 
-There were two different implementations of the date maths — one in `ShiftCreateDialog` that created the shifts, one in `RecurrenceSettings` that drew the preview — so the preview did not show what you would get. Both now call one shared module.
-
-Reproduced against the old code, starting from Wednesday 2 September 2026:
-
-| Asked for | Got |
-|---|---|
-| Weekly, Mondays only, 4 shifts | **0 shifts** — "No valid dates generated" |
-| Biweekly, Mon+Wed, 6 shifts | Wed 2, **Mon 7**, Wed 16, **Mon 21**… — dates from the skipped week |
-| Monthly from the 31st, 5 shifts | 31 Jan, 28 Feb, **28 Mar, 28 Apr, 28 May** |
-| Nightly 22:00–06:00 over the clock change | one night silently became **22:00–07:00** |
-
-- **Weekly produced nothing at all** whenever the chosen day was not the start day. It stepped forward seven days at a time while only accepting dates whose weekday was in the selected set — and +7 lands on the same weekday forever, so a Monday-only pattern starting on a Wednesday never matched.
-- **The preview had the same stepping and no exit** when nothing matched: `count` never incremented and no break condition could fire, so it span forever. Picking such a day froze the tab.
-- **Biweekly** measured fortnights as 7-day blocks counted from the start timestamp rather than calendar weeks, so it emitted off-week dates.
-- **Monthly** called `addMonths` on the previous occurrence, so February clamped the 31st to the 28th and every later month inherited it.
-- **Overnight shifts across a clock change** set each end to start + elapsed milliseconds, so a 22:00–06:00 shift became 22:00–07:00 while `scheduled_duration_minutes` still said eight hours — the stored fields disagreed with each other.
-
-Times are now treated as wall-clock, which is what a rota means: 22:00–06:00 stays 22:00–06:00 through a clock change and that night carries its own real duration (420 minutes, not 480). The preview renders the actual occurrences the dialog will create, so the two cannot drift apart again.
-
-`ShiftCreateDialog` also stopped writing `duration_minutes` — that field is the time actually worked, written by `clockShift` on clock-out.
-
-### Bulk shifts
-
-**Bulk status change and bulk time change could never have worked.** `Shift.update()` is `axios.put`, a full replace, and both sent partial payloads:
-
-```js
-base44.entities.Shift.update(id, { status: newStatus })
+```
+static key + enabled flip        fetches: 0   rows: 0
+key changes as it enables        fetches: 0   rows: 0
 ```
 
-`Shift` requires `client_id`, `start_datetime` and `end_datetime`, so a PUT carrying only `{status}` cannot validate — the update is rejected and nothing changes. `bulkReassignShifts` had the same defect in three places. All now merge onto the record they already fetched.
+That second line matters, because `enabled: !!user` paired with `queryKey: [..., user?.email]` is the shape of nearly every "my …" page in this app — My Timesheets, My Payslips, My Leave Requests, My Forms, My Mileage Claims, My Compliance, Shift Swaps, Policy Management — plus every dialog gated on `open`.
 
-**Bulk-created shifts landed an hour out during BST.** `createBulkShifts` built `new Date(y, m, d, 9, 0)` on the server and stored `toISOString()`. The function runs in UTC, so a 09:00 shift was pinned to 09:00Z — 10:00 in London during summer — and disagreed with the same shift made in the normal dialog, which builds its dates in the browser. The dates are now resolved client-side, where the offset for that particular date is known, which also handles a week containing the clock change (verified: 23 March 09:00 → 09:00Z, 29 March 09:00 → 08:00Z, both still reading 09:00 on the rota). The old server-side path is kept for older callers.
+### What changed
 
-It also wrote `duration_minutes` on drafts nobody had worked, which would make an untouched draft look like completed work to the timesheet and reporting screens. Removed; only `scheduled_duration_minutes` is set.
+All 42 `enabled` + `initialData` pairs had the `initialData` removed. Where a site had no destructuring default, one was added so `data` is never `undefined` — 14 needed that, e.g.:
 
-The dialog now rejects zero-length and duplicate time slots, states that a slot ending before it starts becomes an overnight shift, and counts the shifts it will actually create rather than assuming days × slots.
+```js
+-  const { data: complianceDocuments } = useQuery({
++  const { data: complianceDocuments = [] } = useQuery({
+     ...
+-    initialData: [],
+     enabled: !!staffEmail
+```
 
-### Verification
+The destructuring default renders exactly the same empty value without poisoning the cache. Object-valued cases (`{ residents: [], location: null }`, the swaps bundle) already had matching defaults and kept them.
 
-`npm run verify:recurrence` — 53 checks covering all of the above plus end conditions, caps and malformed input. Mutation-tested: restoring the weekly +7 stepping, the monthly walk-from-previous, the biweekly parity drop, the server-side UTC construction, and the shared-duration bug each make the suite fail on the specific check that names the behaviour.
+I did not try to fix only the sites I judged broken. My first pass classified them by whether the gate could start false, and it was wrong in both directions — `isAdmin` looks synchronous but derives from an async `user`, while a `clientId` prop is available on first render. The transformation is safe either way: where the gate was already true at mount the behaviour is unchanged apart from `isLoading` briefly being honest, and several sites carried their own `staleTime: 0`, which had been sparing them. So it was applied uniformly rather than selectively on a guess.
 
-Verified: `vite build` clean; `verify:recurrence`, `verify:residency` and `audit:query-keys` all pass; eslint clean on the new files (the remaining errors on touched files are pre-existing unused imports, unchanged in count).
+### Guard
+
+`npm run audit:query-init` fails when any query pairs the two again, naming the file, line and key. Confirmed it fires: reintroducing the pair in MyTimesheets exits 1 and reports `src/pages/MyTimesheets.jsx:86 ['myTimesheets', user?.email]`; removing it returns clean.
+
+Verified: `vite build` clean; `audit:query-init`, `audit:query-keys`, `verify:recurrence` and `verify:residency` all pass; no new lint errors across the 28 files.
 
