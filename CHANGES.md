@@ -1,46 +1,52 @@
-## Linking a service user as a resident of an organisation (Base44 checkpoint 6a83aafddc184d8fb0434288)
+## The organisation picker listed nothing (Base44 checkpoint 6a83b1c0ba27310c7cc80c4c)
 
-**New**: `src/components/clients/residencyMapping.js`, `residencyTransfer.js`, `ClientResidencyPanel.jsx`, `scripts/verify-residency-mapping.mjs`
-**Changed**: `ResidentManager.jsx`, `LocationManager.jsx`, `ClientCard.jsx`, `ClientProfile.jsx`, `package.json`, Client entity schema
+**Changed**: `src/components/clients/ClientResidencyPanel.jsx`
 
-### What was there before
+My own bug, from the previous change. I wrote the picker's queries as:
 
-Three records describe the same person: the **Client** (the service user), the **ClientLocation** (the site), and the **Resident** (the rich care profile held at the site). The only thing joining them was a bare `client_id` dropped into `ClientLocation.residents[]`.
+```js
+enabled: showLinkDialog,
+initialData: [],
+```
 
-`Resident.linked_client_id` existed in the schema and **nothing in the codebase read or wrote it**. So linking someone as a resident changed nothing about them: their Client record still carried their old home address, geofenced clock-in still checked the old coordinates, their care information stayed behind, and there was no way to undo it because nothing had been recorded.
+`initialData` seeds the cache with an empty array stamped **fresh as of now**. The observer mounts with `enabled: false`, so nothing fetches. When the dialog opens and `enabled` flips true, TanStack sees data that is still fresh under the app's global `staleTime: 2 * 60 * 1000` and skips the fetch entirely. `refetchOnMount: 'always'` doesn't rescue it, because enabling an existing observer is not a mount.
 
-### Linking now moves the person
+The result is a picker that is permanently empty for the first two minutes, with no error and no spinner — the query function never runs at all.
 
-`linkClientAsResident()` performs a real transfer:
+Confirmed against the app's real QueryClient defaults rather than by inspection:
 
-- Creates the **Resident profile at the location**, populated from the service user — care plan, risk assessment, conditions, allergies, medications (with their administration protocol), dietary, communication, mobility, cultural, behavioural and advance-care details, plus emergency contacts.
-- Points the Client's **service-delivery fields at the site** — address, postcode, latitude, longitude, access details — so staff are routed correctly and geofenced clock-in checks the right place.
-- Adds them to the location's `residents[]`, which the visit-note and shift screens read.
-- **Snapshots the values the site takes over** before overwriting them, and appends to an audit trail in `client.residency.history`.
+```
+WITH initialData: []    queryFn ran: 0 time(s)   rows shown: 0
+WITHOUT initialData     queryFn ran: 1 time(s)   rows shown: 2
+```
 
-The two entities disagree about shape — the Client keeps free text (`"Type 2 diabetes; early vascular dementia"`), the Resident keeps structured arrays. Fields with a clean equivalent are mapped; the five with no honest slot (care instructions, likes/dislikes, routine, medical history, funding notes) go into the resident's notes under a clear heading rather than being forced into a field that means something else. Personal details — phone, emergency contact — are deliberately **not** transferred: living at a site does not change who to call.
+The fix is to drop `initialData` and keep only the `= []` destructuring default, which renders the same empty list without poisoning the cache. Both the organisation and location queries had it. Their empty-state messages now also distinguish loading from genuinely empty, instead of claiming "No organisations have been set up yet" while the fetch is still in flight.
 
-### Reversal keeps what was gathered
+### The same trap is set in 42 other places
 
-`revertToStandalone()` restores the snapshotted address and coordinates exactly, then carries the residency back with the person: care-plan and risk-assessment updates, conditions and medications added at the location, and contacts recorded there. Where the client's own value and the residency's differ, **both are kept** and the residency's is labelled with where it came from — nothing is silently overwritten in either direction. The Resident profile is **discharged, not deleted**, so the history survives and a re-link picks the same record back up. An optional "keep the location's address" covers someone staying put while served under their own arrangement.
+Sweeping for `useQuery` blocks that combine `enabled` with `initialData` finds 42 across `src/`. The pattern only bites when `enabled` is false on first render, which is exactly the shape of every "my ..." page — the query is gated on `user?.email` while the user is still loading:
 
-### Verified, not asserted
+```js
+// src/pages/MyTimesheets.jsx
+const { data: timesheets = [] } = useQuery({
+  queryKey: ['myTimesheets', user?.email],
+  enabled: !!user,        // false until the async auth.me() resolves
+  initialData: []
+});
+```
 
-The mapping is pure and import-free, so `npm run verify:residency` exercises the full standalone → resident → standalone round trip in plain node — 47 checks covering every transferred field, the merge-back, the address round trip and edge cases.
+I assumed the changing query key would save these — the key goes from `['myTimesheets', undefined]` to `['myTimesheets', 'staff@example.com']` as the user arrives. It does not:
 
-A green suite that cannot go red is worthless, so I mutation-tested it. Four deliberate breaks — merge dropping the client's existing value, unstructured fields never transferring, re-linking overwriting a care plan updated at the location, and contacts added at the location being dropped — each fail with the check naming the broken behaviour.
+```
+static key + enabled flip        fetches: 0   rows: 0   <-- EMPTY
+key changes as it enables        fetches: 0   rows: 0   <-- EMPTY
+```
 
-### A data-loss bug found on the way
+Switching an existing observer to a new key does not count as a mount either, and `initialData` is applied to the new key just as fresh. So the affected pages show nothing for two minutes unless something else invalidates them first.
 
-Entity `update()` is `axios.put` — a **full replace** — and both location writes sent partial payloads. `LocationManager`'s edit form carries 15 of the location's ~35 fields, and `ResidentManager` sent only `{residents, current_residents}`. So editing a location would drop its resident list, contacts, WiFi, operating hours and safety notes, and blank the required `parent_client_id`. Since residents live on that record, the residency link could not survive an ordinary location edit. Both call sites now spread the existing record.
+Not all 42 are live: where the gate is already true on first render (`enabled: !!staffEmail` with the id from the URL, as in StaffProfile) the query mounts enabled and `refetchOnMount: 'always'` fires normally. The broken subset is those gated on asynchronously-loaded state.
 
-Also fixed: "Enable Care Planning" on a name-only resident created a Client with a comment reading *"link to parent organisation if schema allows, but loose coupling is fine"* and no link at all. It now routes through the same transfer.
+Left alone pending a decision — it touches many pages and is well beyond fixing the picker.
 
-### UI
-
-A residency panel on the client profile shows whether someone is standalone or a resident, with links to the organisation, location and resident profile, and the history. Both directions state plainly what moves and what is retained before you commit. The location's resident manager performs the real move when a service user is selected, and removing a genuine resident offers the reversal instead of silently dropping the row. Client cards carry a resident badge naming the location.
-
-**Schema**: one `residency` object added to Client (status, org/location ids and names, resident record id, room, support level, key worker, start date, snapshot, history). Verified as additions only — all 57 existing fields and the RLS rules intact. Resident needed no change; its existing `linked_client_id`, `status: discharged` and `admission_date` carry the link.
-
-Verified: `vite build` clean; `npm run verify:residency` 47/47; `npm run audit:query-keys` clean; eslint clean on all new and changed files.
+Verified: `vite build` clean; `npm run verify:residency` 47/47; `npm run audit:query-keys` clean; eslint clean.
 
