@@ -1,41 +1,38 @@
-## The backend on the db wrapper (Base44 checkpoints 6a850bd7b369d1d0fd18dad1, 6a850df8acec4e79ade8af76)
+## The notification backlog, badges and orphans (Base44 checkpoint 6a852aa6d8b7fd2e60b1cbbc)
 
-**Changed**: 142 functions + 5 shared modules, `base44/functions/shared/dbHelpers/entry.ts`
+**Changed**: `sendOnboardingReminders`, `cleanupNotificationBacklog`, `cleanupOrphanedShifts`, `shared/notificationHelpers`, `useBadgeCounts.jsx`
 
-Every backend entity call now goes through the wrapper. No `asServiceRole.entities` or `.entities[` remains anywhere in `base44/functions`.
+Archiving was never the problem. Zero notifications older than the 14-day cutoff are unarchived, so the sweep is keeping up. The backlog is inflow.
 
-### The rename carries the client with it
+### Notifications: duplicates multiplied by manager fan-out
 
-The obvious approach — insert `const db = ...` after the client is built, then rename — needs to know where the client was declared. That falls apart quickly here: four shared modules receive `base44` as a function parameter, `chatWebSocket` builds two clients, and `backupVisitNoteToOneDrive` assigns rather than declares. With no Deno available to catch a mistake, scope analysis across 142 untestable files was the wrong bet.
+285 unread `review_required` notifications, from **13 distinct underlying situations**.
 
-So the call site carries the client instead:
+`sendOnboardingReminders` created a fresh notification on every run for conditions that persist — tasks still overdue tomorrow — with no check for an existing unread one. That produced 33 separate "Overdue Onboarding Tasks" notifications in eight days. `cleanupNotificationBacklog`, the function meant to clear the backlog, then escalated every high-priority item to every manager: 33 sources × 3 managers = **101 escalations from one recurring condition**. The same shape gave 55 for "New Shift Assigned" and 44 for "Critical Visit Note".
 
+The escalations are created `action_required: true`, so the 14-day informational sweep skips them and they only archive after 30 days. Inflow beat cleanup roughly three to one.
+
+`createNotificationIfAbsent` in the shared helpers now skips creation when the recipient already has an unread notification of the same type and title. Both `sendOnboardingReminders` sites and the escalation loop use it. Once the recipient reads or archives it, a later run may raise it again — a still-overdue task should resurface after being acknowledged and ignored, so this suppresses repetition rather than the alert itself.
+
+It dedupes on (recipient, type, title) because these reminders carry no `related_entity_id` and the title is what repeats. The lookup filters on one field and narrows in JS, so it behaves the same whichever way the SDK handles multi-field queries — still unsettled.
+
+### Orphans: the sweep only ever saw one page
+
+```js
+const shifts = await serviceDb(base44).Shift.list();   // no limit
 ```
-base44.asServiceRole.entities.Shift  ->  serviceDb(base44).Shift
-base44.entities.Shift                ->  userDb(base44).Shift
-```
 
-That is correct wherever the client is in scope, including inside helpers, with no analysis at all. Wrappers are memoised per client in a WeakMap, so repeating the call costs nothing.
+No limit means one server-default page. There are more than a thousand shifts — confirmed by paging to offset 1000 — so the job inspected a fraction and never found orphans outside it. Its sibling `cleanupDeletedShiftReferences` already passes `10000`, so someone hit this once and fixed it in only one place. Shifts, clients and users are now paged until the source is exhausted.
 
-### Naming the scope was the point
+### Badges: counted over a window
 
-`base44.asServiceRole.entities.X` and `base44.entities.X` differ by one easily-missed word while meaning "any row in the system" versus "rows this user may see". `serviceDb(...)` and `userDb(...)` do not blur together when skim-read. The split came out at **555 service-role and 20 user-scoped** calls, the 20 landing in exactly the seven files that were user-scoped before — which is the check that matters, since silently converting a service-role read to a user-scoped one would hide rows rather than fail loudly.
+`useBadgeCounts` narrowed `read` in JS over the newest 500 notifications per user, which under-counts as soon as an account holds more than that: unread ones get pushed out of the window by newer read ones and the badge quietly drops. The previous comment already predicted this. It now pages until a short page comes back.
 
-### Three things the migration got wrong first
+That is correct whichever way compound filters behave. If that question is ever settled in favour of them, this collapses to a single `filter({ recipient_email, read: false, archived: false })`, and the comment says so.
 
-**Shared modules got the wrong import path.** They live a level deeper, so `'../shared/dbHelpers/entry.ts'` resolved to `shared/shared/dbHelpers`. Seven functions failed to bundle, all tracing back to two shared modules. Fixed to `'../dbHelpers/entry.ts'` for anything under `shared/`.
+### Effect
 
-**An aliased client was mislabelled.** `contentScheduler` does `const client = base44.asServiceRole` and then `client.entities.…`. With no literal `.asServiceRole` at the call site, the rename made it `userDb(client)`. It still resolved to service-role entities, so behaviour never changed — but the call sites now claimed a scope they did not have, which is precisely the confusion the naming exists to prevent. It is the only file in the codebase that aliases the client, and it is now `serviceDb(base44)`.
+Nothing is deleted, and the existing 466 unread notifications stay. What changes is the rate: a persisting condition now produces one notification per recipient until it is dealt with, instead of one per scheduled run multiplied by the number of managers. The standing backlog drains through the existing 30-day sweep.
 
-**A blanket `db.` replace mangled a comment**, turning `src/api/db.js` into `src/api/serviceDb(base44).js`. Caught on inspection and restored.
-
-None of these would have been found by reading the diff summary. They came out of bundling every file.
-
-### Verification
-
-All 142 functions bundle under esbuild in a single pass with every shared import resolving. That proves syntax and module resolution, not runtime — the same limit as the trial migration, which is why the trial went first and why the work was split into a lower-risk batch of 125 and a high-stakes batch of 20 (clock-in, payroll, timesheets, invoicing, medication, account deletion) with a checkpoint between them.
-
-`markdownPdfHelpers` fails to bundle on `./markdownPdfParser.js`. It has no reference to the wrapper and predates this work; Deno resolves that import where esbuild does not.
-
-Frontend unaffected: `vite build` clean, all five check scripts pass, lint unchanged at 928 pre-existing errors.
+Verified: all 142 backend functions bundle, including the four changed; `vite build` clean; `verify:db`, `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; lint unchanged at 928 pre-existing errors.
 
