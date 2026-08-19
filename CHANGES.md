@@ -1,20 +1,30 @@
-## Closing the in-run duplicate window (Base44 checkpoint 6a852c2eeba6f2d1b6ed4b59)
+## Handover alerts had no summary to show (Base44 checkpoint 6a852f6211dd465525137105)
 
-**Changed**: `shared/notificationHelpers`, `cleanupNotificationBacklog`, `sendOnboardingReminders`, `src/api/db.js`
+**Changed**: `base44/functions/getHandoverAlerts/entry.ts`, `src/components/dashboard/HandoverAlerts.jsx`
 
-The dedupe deployed at 03:53. Checking whether it was working turned up a batch of duplicates at 03:17 — 36 minutes earlier, so old behaviour rather than a failure. But the shape of that batch showed a gap worth closing.
+### Not a regression from today, as far as the evidence goes
 
-Within that single run, "Management review required: Critical Visit Note: Joan Temple" was created for the same manager twice, **1.1 seconds apart**. Several source notifications in one pass carried the same title, and the helper's lookup can only skip a duplicate it can see. If a write is not yet visible to a read a second later, the second escalation goes through anyway.
+Reported as "no longer showing summaries", and today's work touched both the backend function and a great deal else, so that was checked first. My change to `getHandoverAlerts` was a single-line rename with identical arguments, and the function has only two commits in its history — the other predates this work by a fortnight.
 
-`createNotificationIfAbsent` now takes an optional `seen` Set shared across a run, and both callers pass one. That closes the window without depending on how quickly writes become queryable — the query still catches duplicates from previous runs, the Set catches duplicates within this one.
+The data does not support a recent break either:
 
-### A query shape that fails silently
+- `ai_summary` is populated on **every** active visit note, right through to the most recent one.
+- `concerns` is empty on most notes and always has been — back through 12 August, it is filled only when there is genuinely something to escalate.
+- `observations` is frequently blank or still holds the literal string "(Draft in progress)".
 
-While checking, `{ created_date: { $gte: '2026-08-18T00:00:00' } }` returned zero rows despite records from 2026-08-19 plainly existing. The same range shape on `start_datetime` — an ordinary schema field — returns the right rows.
+So nothing stopped being generated. I could not reproduce a point where this worked and then didn't, and I am not going to claim a regression I cannot substantiate.
 
-So at least one query form does silently return `[]`, and it is the one over a **server-managed** field. That does not settle the compound-filter question, which is about multi-field queries through the SDK, but it is the first hard evidence that this backend does sometimes answer a well-formed query with nothing rather than an error. It is recorded in `src/api/db.js` alongside the rest, with the practical rule: filter on your own fields and narrow dates in JS.
+### What is actually wrong
 
-It also means my own earlier check — "zero notifications older than the cutoff are unarchived", which I used to clear the archive job — was itself a `created_date` range query and cannot be trusted. The conclusion may still hold, but the evidence for it does not. Re-checking it needs a different method.
+`getHandoverAlerts` builds its response from an explicit field whitelist, and `ai_summary` was never in it. The alert card's only free-text line was `note.concerns`, which is blank on most notes.
 
-Verified: 143 backend modules bundle; `vite build` clean; all five check scripts pass; lint unchanged at 928 pre-existing errors.
+The result is a card carrying a severity badge, a client name and flag icons — but nothing saying what happened on the visit. The app writes a good one-line account of every visit and then drops it on the floor one layer before it reaches the screen. On a card whose whole purpose is telling the next carer what they are walking into, that is the part that matters.
+
+### The fix
+
+`ai_summary` is returned by the function and rendered in both places: as the card's summary line, and as a "Summary" section at the top of the detail dialog. `concerns` stays exactly where it was, still italicised behind a red rule, because when it is present it is an escalation rather than a description — the two say different things and the card now shows both.
+
+Note the backend write again reported "Revision ... failed" while landing on disk and committing correctly, as it has all session. Worth confirming the summary line appears.
+
+Verified: `getHandoverAlerts` bundles; `vite build` clean; `verify:db`, `audit:query-keys`, `audit:query-init` pass.
 
