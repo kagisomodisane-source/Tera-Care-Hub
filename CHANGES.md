@@ -1,33 +1,41 @@
-## Backend db wrapper, one function migrated as a trial (Base44 checkpoint 6a84f692485c85c9fab9cb8c)
+## The backend on the db wrapper (Base44 checkpoints 6a850bd7b369d1d0fd18dad1, 6a850df8acec4e79ade8af76)
 
-**New**: `base44/functions/shared/dbHelpers/entry.ts`
-**Changed**: `base44/functions/markPolicyAsRead/entry.ts`, `scripts/verify-db-wrapper.mjs`, `entityUpdateHelpers.js`
+**Changed**: 142 functions + 5 shared modules, `base44/functions/shared/dbHelpers/entry.ts`
 
-One function, not 156. There is no Deno in the sandbox, so backend changes cannot be run or type-checked here; migrating every function blind would risk taking down medication data, payroll and clock-in at once on a single wrong import. This proves the pattern on something safe first.
+Every backend entity call now goes through the wrapper. No `asServiceRole.entities` or `.entities[` remains anywhere in `base44/functions`.
 
-### The shared module
+### The rename carries the client with it
 
-`createDb(base44.asServiceRole.entities)` gives the same `db.Entity.method()` surface as the frontend: reads pass through, writes lose server-managed fields, partial updates stay partial. It sits alongside the shared modules that already exist (`authHelpers`, `billingHelpers`, and eight more) and uses the same `'../shared/<name>/entry.ts'` import other functions already rely on.
+The obvious approach — insert `const db = ...` after the client is built, then rename — needs to know where the client was declared. That falls apart quickly here: four shared modules receive `base44` as a function parameter, `chatWebSocket` builds two clients, and `backupVisitNoteToOneDrive` assigns rather than declares. With no Deno available to catch a mistake, scope analysis across 142 untestable files was the wrong bet.
 
-It cannot import the frontend's copy — the frontend and the functions are separate bundles — so the `SYSTEM_FIELDS` list is duplicated on purpose. `verify:db` now compares the two and fails if they drift, which is the one way two copies quietly become dangerous. Confirmed it fires: removing `is_sample` from the backend list fails the check and prints both lists.
+So the call site carries the client instead:
 
-### Why markPolicyAsRead
+```
+base44.asServiceRole.entities.Shift  ->  serviceDb(base44).Shift
+base44.entities.Shift                ->  userDb(base44).Shift
+```
 
-It is the most-invoked function from the UI, and it exercises a broad slice of the wrapper in one go: `list`, `filter` twice, `create`, and three partial `update`s. It is also cheap to get wrong — the worst case is a policy staying unread. Nothing is deleted and no money or medication is touched.
+That is correct wherever the client is in scope, including inside helpers, with no analysis at all. Wrappers are memoised per client in a WeakMap, so repeating the call costs nothing.
 
-`base44.auth` is untouched; only entity access moved.
+### Naming the scope was the point
 
-### What could not be verified here
+`base44.asServiceRole.entities.X` and `base44.entities.X` differ by one easily-missed word while meaning "any row in the system" versus "rows this user may see". `serviceDb(...)` and `userDb(...)` do not blur together when skim-read. The split came out at **555 service-role and 20 user-scoped** calls, the 20 landing in exactly the seven files that were user-scoped before — which is the check that matters, since silently converting a service-role read to a user-scoped one would hide rows rather than fail loudly.
 
-Both files bundle cleanly under esbuild with the shared import resolving, exactly as `authHelpers` does. That proves the syntax and the module path, not the runtime.
+### Three things the migration got wrong first
 
-Two of the writes returned "Change was committed to git but failed to apply — Revision … failed" from the platform's function deployment step. The files landed on disk correctly and committed, and the later checkpoint went through without complaint, so this looks like a transient deploy hiccup rather than broken code. It is the reason this is a trial rather than a sweep.
+**Shared modules got the wrong import path.** They live a level deeper, so `'../shared/dbHelpers/entry.ts'` resolved to `shared/shared/dbHelpers`. Seven functions failed to bundle, all tracing back to two shared modules. Fixed to `'../dbHelpers/entry.ts'` for anything under `shared/`.
 
-### To confirm it works
+**An aliased client was mislabelled.** `contentScheduler` does `const client = base44.asServiceRole` and then `client.entities.…`. With no literal `.asServiceRole` at the call site, the rename made it `userDb(client)`. It still resolved to service-role entities, so behaviour never changed — but the call sites now claimed a scope they did not have, which is precisely the confusion the naming exists to prevent. It is the only file in the codebase that aliases the client, and it is now `serviceDb(base44)`.
 
-Open a policy and mark it as read — Training hub, My Assigned Policies, Policy Management or Policy Acknowledgments all call it. It should record the read, appear in the read list, and complete a matching assignment if one exists. If it errors, the function reverts by restoring the checkpoint before this one.
+**A blanket `db.` replace mangled a comment**, turning `src/api/db.js` into `src/api/serviceDb(base44).js`. Caught on inspection and restored.
 
-Once confirmed, the remaining 155 functions follow the same mechanical shape: add the import, build `db` from the client, rename `base44.asServiceRole.entities.` to `db.`.
+None of these would have been found by reading the diff summary. They came out of bundling every file.
 
-Verified here: `vite build` clean; `verify:db` (29 checks, including the new drift check), `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; lint unchanged at 928 pre-existing errors.
+### Verification
+
+All 142 functions bundle under esbuild in a single pass with every shared import resolving. That proves syntax and module resolution, not runtime — the same limit as the trial migration, which is why the trial went first and why the work was split into a lower-risk batch of 125 and a high-stakes batch of 20 (clock-in, payroll, timesheets, invoicing, medication, account deletion) with a checkpoint between them.
+
+`markdownPdfHelpers` fails to bundle on `./markdownPdfParser.js`. It has no reference to the wrapper and predates this work; Deno resolves that import where esbuild does not.
+
+Frontend unaffected: `vite build` clean, all five check scripts pass, lint unchanged at 928 pre-existing errors.
 
