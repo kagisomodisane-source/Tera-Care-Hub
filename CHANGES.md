@@ -1,28 +1,33 @@
-## Correcting the PUT folklore (Base44 checkpoint 6a84f322681c41b9b2b4cff5)
+## Backend db wrapper, one function migrated as a trial (Base44 checkpoint 6a84f692485c85c9fab9cb8c)
 
-**Changed**: 10 comments across 9 files, plus `src/api/db.js`
+**New**: `base44/functions/shared/dbHelpers/entry.ts`
+**Changed**: `base44/functions/markPolicyAsRead/entry.ts`, `scripts/verify-db-wrapper.mjs`, `entityUpdateHelpers.js`
 
-### The "full replace" claim is gone
+One function, not 156. There is no Deno in the sandbox, so backend changes cannot be run or type-checked here; migrating every function blind would risk taking down medication data, payroll and clock-in at once on a single wrong import. This proves the pattern on something safe first.
 
-Ten comments asserted that `update()` is a PUT that replaces the whole record. It isn't — the server merges. All ten now say what the code does and why, without the false reason. Four of them I wrote earlier in this session, which is how the mistake propagated: I read the claim in `entityUpdateHelpers.js`, believed it, and repeated it in `residencyTransfer.js`, `LocationManager.jsx`, `ShiftManagement.jsx` and `bulkReassignShifts/entry.ts`.
+### The shared module
 
-The root comment now carries the correction explicitly, so the next reader gets the fix rather than the folklore.
+`createDb(base44.asServiceRole.entities)` gives the same `db.Entity.method()` surface as the frontend: reads pass through, writes lose server-managed fields, partial updates stay partial. It sits alongside the shared modules that already exist (`authHelpers`, `billingHelpers`, and eight more) and uses the same `'../shared/<name>/entry.ts'` import other functions already rely on.
 
-No code changed. Every whole-record merge stays exactly as it was — it works under either behaviour, and you asked to keep them. The comments now note the one real cost: sending a whole record can overwrite a field someone else changed in the meantime.
+It cannot import the frontend's copy — the frontend and the functions are separate bundles — so the `SYSTEM_FIELDS` list is duplicated on purpose. `verify:db` now compares the two and fails if they drift, which is the one way two copies quietly become dangerous. Confirmed it fires: removing `is_sample` from the backend list fails the check and prints both lists.
 
-### One conflict preserved rather than erased
+### Why markPolicyAsRead
 
-`MyMileageClaims.jsx` did not merely assert the rule — it recorded an observation: sending the form bare "wiped" the approval trail, the payslip reimbursement link and the GPS provenance. That contradicts what I found. Rather than delete it, the comment now keeps the claim and marks it unresolved: either it was inferred rather than observed, or the platform's behaviour changed. Merging is correct either way, so the code stays; the next person is told not to treat the old claim as fact without re-checking.
+It is the most-invoked function from the UI, and it exercises a broad slice of the wrapper in one go: `list`, `filter` twice, `create`, and three partial `update`s. It is also cheap to get wrong — the worst case is a policy staying unread. Nothing is deleted and no money or medication is touched.
 
-Deleting an inconvenient observation because it disagrees with a newer test would be the same mistake in the other direction.
+`base44.auth` is untouched; only entity access moved.
 
-### And a correction to my own overclaim
+### What could not be verified here
 
-Last commit, `db.js` said compound filters "WORK … that is folklore and it is wrong." That was too strong, and I have softened it.
+Both files bundle cleanly under esbuild with the shared import resolving, exactly as `authHelpers` does. That proves the syntax and the module path, not the runtime.
 
-What I actually established is that the **server** answers compound queries correctly — two-field equality, `$in`, and a `$gte`/`$lte` date range all return the right rows. What I did not test is the **SDK's own path** (`GET` with `q=JSON`), which is what the eighteen work-around call sites actually use, and which needs a browser with real credentials.
+Two of the writes returned "Change was committed to git but failed to apply — Revision … failed" from the platform's function deployment step. The files landed on disk correctly and committed, and the later checkpoint went through without complaint, so this looks like a transient deploy hiccup rather than broken code. It is the reason this is a trial rather than a sweep.
 
-Eighteen independent workarounds is meaningful evidence, and one admin-API test does not overturn it. `db.js` now states both sides, says plainly which is untested, and asks whoever can run a two-field `entity.filter()` against the live API to settle it and record the answer. The workarounds stay — they are harmless, and removing them on a half-proof is how this kind of mistake starts.
+### To confirm it works
 
-Verified: `vite build` clean; `verify:db`, `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; lint unchanged at 928 pre-existing errors; zero wrapper-rule violations.
+Open a policy and mark it as read — Training hub, My Assigned Policies, Policy Management or Policy Acknowledgments all call it. It should record the read, appear in the read list, and complete a matching assignment if one exists. If it errors, the function reverts by restoring the checkpoint before this one.
+
+Once confirmed, the remaining 155 functions follow the same mechanical shape: add the import, build `db` from the client, rename `base44.asServiceRole.entities.` to `db.`.
+
+Verified here: `vite build` clean; `verify:db` (29 checks, including the new drift check), `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; lint unchanged at 928 pre-existing errors.
 
