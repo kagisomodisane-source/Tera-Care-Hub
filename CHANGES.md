@@ -1,37 +1,28 @@
-## An SDK wrapper, and two pieces of folklore disproved (Base44 checkpoint 6a84f1b9760274d54ad8186c)
+## Correcting the PUT folklore (Base44 checkpoint 6a84f322681c41b9b2b4cff5)
 
-**New**: `src/api/db.js`, `src/api/dbFactory.js`, `scripts/verify-db-wrapper.mjs`
-**Changed**: 214 files (820 call sites), `eslint.config.js`, `entityUpdateHelpers.jsx` → `.js`
+**Changed**: 10 comments across 9 files, plus `src/api/db.js`
 
-### The premise changed before I built it
+### The "full replace" claim is gone
 
-The wrapper was meant to make partial updates impossible, because `update()` is `axios.put` and `entityUpdateHelpers.js` said PUT was a full replace. Before writing it I checked both assumptions against production data, read-only. Both were wrong.
+Ten comments asserted that `update()` is a PUT that replaces the whole record. It isn't — the server merges. All ten now say what the code does and why, without the false reason. Four of them I wrote earlier in this session, which is how the mistake propagated: I read the claim in `entityUpdateHelpers.js`, believed it, and repeated it in `residencyTransfer.js`, `LocationManager.jsx`, `ShiftManagement.jsx` and `bulkReassignShifts/entry.ts`.
 
-**update() merges.** `DocumentReadReceipt` rows written by `CarePlanViewer` with only `{ view_count }` still hold `document_title`, `user_email`, `document_id`, `client_id` and `document_type`, with `updated_date` later than `created_date`. `Notification` rows written with only `{ read, action_taken }` keep their title and message. So the 185 partial-update call sites are not bugs, and forcing whole-record writes would have meant an extra fetch wherever only an id is in scope plus a real risk of a stale record overwriting someone else's concurrent edit.
+The root comment now carries the correction explicitly, so the next reader gets the fix rather than the folklore.
 
-**Compound filters work**, including operators — `{status, is_overnight}` and `{status: {$in: [...]}}` both return correct rows. Comments in seven files claim they silently return `[]`. That is folklore, and a guard built on it would have broken 365 working call sites.
+No code changed. Every whole-record merge stays exactly as it was — it works under either behaviour, and you asked to keep them. The comments now note the one real cost: sending a whole record can overwrite a field someone else changed in the meantime.
 
-This also means my earlier claim that bulk status change "could never have worked" was wrong: `Shift.update(id, {status})` merges and works. That claim came from inference, not evidence.
+### One conflict preserved rather than erased
 
-### What was built instead
+`MyMileageClaims.jsx` did not merely assert the rule — it recorded an observation: sending the form bare "wiped" the approval trail, the payslip reimbursement link and the GPS provenance. That contradicts what I found. Rather than delete it, the comment now keeps the claim and marks it unresolved: either it was inferred rather than observed, or the platform's behaviour changed. Merging is correct either way, so the code stays; the next person is told not to treat the old claim as fact without re-checking.
 
-`db.Shift.list(...)` behaves exactly like the SDK call it replaces. The only behaviour added is the one thing the old comment was right about: **server-managed fields are stripped from every write**. Sending `id`, `created_date` or `created_by` back can fail validation and lose the whole save, which is easy to do by accident whenever a record read from the API is spread into a write — and only about a third of the 304 update sites were guarding against it.
+Deleting an inconvenient observation because it disagrees with a newer test would be the same mistake in the other direction.
 
-Partial updates stay partial, which is now the documented default.
+### And a correction to my own overclaim
 
-The wrapper is also where what we know about this backend is written down, with the evidence, so it does not have to be rediscovered. Anything learned later belongs there.
+Last commit, `db.js` said compound filters "WORK … that is folklore and it is wrong." That was too strong, and I have softened it.
 
-### Enforcement
+What I actually established is that the **server** answers compound queries correctly — two-field equality, `$in`, and a `$gte`/`$lte` date range all return the right rows. What I did not test is the **SDK's own path** (`GET` with `q=JSON`), which is what the eighteen work-around call sites actually use, and which needs a browser with real credentials.
 
-An eslint `no-restricted-syntax` rule rejects `base44.entities` anywhere outside `src/api/db.js`, pointing at the wrapper. Confirmed it fires: planting `base44.entities.Client.list(` in `Clients.jsx` produces an error at that line; the real tree has none. `src/api/**` was added to the lint config's file list, since it previously covered only components, pages and `Layout.jsx`.
+Eighteen independent workarounds is meaningful evidence, and one admin-API test does not overturn it. `db.js` now states both sides, says plainly which is untested, and asks whoever can run a two-field `entity.filter()` against the live API to settle it and record the answer. The workarounds stay — they are harmless, and removing them on a half-proof is how this kind of mistake starts.
 
-`base44.auth`, `base44.functions` and `base44.integrations` are untouched — 113, 169 and 77 uses respectively.
-
-### Verification
-
-`npm run verify:db` — 27 checks against a stub entity layer, covering that reads pass through unchanged, that compound filters are not mangled, that writes lose exactly the system fields and keep everything else, and that a partial update stays partial with no read-before-write. Mutation-tested: dropping the strip, forcing a whole-record send, and mangling compound filters each fail the checks that name them.
-
-The factory lives in `dbFactory.js` so node can load it without a browser; that required renaming `entityUpdateHelpers.jsx` to `.js`, which it should always have been — it contains no JSX, and all 18 importers use extensionless paths.
-
-Verified: `vite build` clean; `verify:db`, `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; zero rule violations. Lint errors went 929 → 928: the migration added one (my "still uses base44" check matched a `media.base44.com` URL), which is fixed. Every remaining error is the pre-existing `unused-imports` rule.
+Verified: `vite build` clean; `verify:db`, `verify:recurrence`, `verify:residency`, `audit:query-keys`, `audit:query-init` all pass; lint unchanged at 928 pre-existing errors; zero wrapper-rule violations.
 
