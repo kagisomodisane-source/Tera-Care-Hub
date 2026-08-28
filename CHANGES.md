@@ -1,40 +1,47 @@
-## Calendar revenue counted days outside the month (Base44 checkpoint 6a917e922da7197aeb07cd1d)
+## The rate configurator (Base44 checkpoint 6a918094a90b434a6bb9cfc2)
 
-**Changed**: `src/components/shifts/ShiftCalendarView.jsx`
+**Changed**: `src/components/clients/ClientEditDialog.jsx`, `src/components/utils/billingRates.jsx`
 
-### The month total was never a month
+Four faults, of which the first two cost money.
 
-`calendarDays` is the drawing grid, and in month view it runs from the Monday before the 1st to the Sunday after the last day:
+### 1. Rates were keyed by a vocabulary billing never looks at
 
-```js
-const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
-const end   = endOfWeek(endOfMonth(currentDate),   { weekStartsOn: 1 });
-```
+Billing resolves a rate with `service_rates.find(r => r.service_type === shift.visit_type)`. The picker was populated from `SERVICE_TYPES`, which is the `Client.service_types` list — a different vocabulary from `Shift.visit_type`. They overlap in **three** values out of fifteen: `personal_care`, `complex_care`, `live_in_care`.
 
-All three summary figures reduced over that grid while the label said "Monthly". Those leading and trailing cells hold real shifts from the neighbouring months, and they were being billed into the total:
+So eight of the eleven options could never match a shift — `domiciliary_care`, `respite_care`, `nursing_care`, `dementia_care`, `palliative_care`, `supported_living`, `sleep_in` — while there was no way at all to price `domestic` or `community_engagement`, both of which are in live use. A rate set against a dead type silently falls through to `default_hourly_rate`, or to nothing.
 
-| Month | Grid | In month | Also counted | Overstated by |
-|---|---|---|---|---|
-| August 2026 | 27 Jul – 6 Sep | 31 | 11 | **+35%** |
-| September 2026 | 31 Aug – 4 Oct | 30 | 5 | +17% |
-| February 2026 | 26 Jan – 1 Mar | 28 | 7 | +25% |
-| November 2026 | 26 Oct – 6 Dec | 30 | 12 | **+40%** |
+Live example: Joanne Clitheroe carries a `domiciliary_care` rate of £29/hr that has never billed anything. Her `personal_care` rate is also £29, so no money was lost there — but only by luck.
 
-Between a third and two fifths too high in a bad month, and it moved with the calendar rather than staying constant, which is what makes it hard to spot as a systematic error.
+The picker now offers `Shift.visit_type` values, plus `overnight_support`, which is not in the schema enum but is used by both live shift data and existing rates.
 
-The same grid drove the hours and payroll-cost figures, so those were wrong by the same days.
+### 2. "Per Visit" billed per hour
 
-### The fix
+The unit dropdown offers Per Hour, Per Night, Per Shift, **Per Visit**, Per Day. `BILLING_UNIT_TYPES` listed only `hour`, `night`, `shift`, `day`, and `normaliseUnitType` silently falls back to `'hour'` for anything it does not recognise.
 
-A `summaryDays` list holds the days the label actually refers to — the grid in day and week view, where the two already agree, and only the in-month days in month view. The three totals reduce over that.
+A rate saved as "£25 per visit" therefore billed £25 **per hour**:
 
-The grid still renders the adjacent-month cells; nothing changes visually. Only the totals stopped counting them.
+| Visit length | Before | After |
+|---|---|---|
+| 1 hour | £25 | £25 |
+| 2 hours | £50 | £25 |
+| 3 hours | £75 | £25 |
+| 8 hours | £200 | £25 |
 
-The variables were also named `weekRevenue`, `weekTotalHours` and `weekPayrollCost` while serving all three view modes, which is how a month total ended up quietly summing a week-aligned grid. They are now `periodRevenue`, `periodTotalHours` and `periodPayrollCost`.
+`visit` is now a real unit meaning one charge per attendance, the same as `shift`. Checked that `hour`, `shift`, `day`, `night` and unrecognised values all behave exactly as before.
 
-### What was not wrong
+No client currently has a per-visit rate saved, so nothing has been mis-invoiced yet — the trap was armed, not sprung.
 
-The billing itself is sound, and was checked before changing anything. `resolveShiftBilling` prices a combined team shift once from its first member — one client, one window, one rate — while `getShiftPayrollCost` deliberately sums across the team, which is the correct asymmetry. Team shifts are grouped before any total is taken, so there is no double counting. Cancelled shifts were already excluded.
+### 3. Editing a rate mutated the client record
 
-Verified: month-grid arithmetic checked against date-fns for four months spanning both 35-day and 42-day grids; `vite build` clean; `verify:db`, `verify:recurrence`, `audit:query-keys`, `audit:query-init` pass; the one lint error in the file is the pre-existing unused React import.
+Every row editor did `const next = [...service_rates]; next[i].field = value`. That copies the array but not the objects in it, and `formData` is seeded with the client's own rate objects, so each keystroke wrote straight through to the record React was still rendering from. Cancel discarded nothing.
+
+All four editors now replace the row instead of mutating it.
+
+### 4. Nothing told you a rate was dead
+
+A rate with no service type, a duplicate type — only the first is ever used, since the lookup is a `find` — a type no shift can carry, or a rate of £0 all sit there looking configured. Each row now says which of those applies.
+
+That is what surfaces problem 1 on existing data: anyone opening Joanne Clitheroe's billing tab is now told the `domiciliary_care` row will never be applied.
+
+Verified: rate arithmetic checked before and after for all units; `vite build` clean; `verify:db`, `verify:recurrence`, `audit:query-keys`, `audit:query-init` pass; the one lint error is the pre-existing unused React import.
 
