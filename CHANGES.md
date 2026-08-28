@@ -1,30 +1,40 @@
-## Handover alerts had no summary to show (Base44 checkpoint 6a852f6211dd465525137105)
+## Calendar revenue counted days outside the month (Base44 checkpoint 6a917e922da7197aeb07cd1d)
 
-**Changed**: `base44/functions/getHandoverAlerts/entry.ts`, `src/components/dashboard/HandoverAlerts.jsx`
+**Changed**: `src/components/shifts/ShiftCalendarView.jsx`
 
-### Not a regression from today, as far as the evidence goes
+### The month total was never a month
 
-Reported as "no longer showing summaries", and today's work touched both the backend function and a great deal else, so that was checked first. My change to `getHandoverAlerts` was a single-line rename with identical arguments, and the function has only two commits in its history — the other predates this work by a fortnight.
+`calendarDays` is the drawing grid, and in month view it runs from the Monday before the 1st to the Sunday after the last day:
 
-The data does not support a recent break either:
+```js
+const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+const end   = endOfWeek(endOfMonth(currentDate),   { weekStartsOn: 1 });
+```
 
-- `ai_summary` is populated on **every** active visit note, right through to the most recent one.
-- `concerns` is empty on most notes and always has been — back through 12 August, it is filled only when there is genuinely something to escalate.
-- `observations` is frequently blank or still holds the literal string "(Draft in progress)".
+All three summary figures reduced over that grid while the label said "Monthly". Those leading and trailing cells hold real shifts from the neighbouring months, and they were being billed into the total:
 
-So nothing stopped being generated. I could not reproduce a point where this worked and then didn't, and I am not going to claim a regression I cannot substantiate.
+| Month | Grid | In month | Also counted | Overstated by |
+|---|---|---|---|---|
+| August 2026 | 27 Jul – 6 Sep | 31 | 11 | **+35%** |
+| September 2026 | 31 Aug – 4 Oct | 30 | 5 | +17% |
+| February 2026 | 26 Jan – 1 Mar | 28 | 7 | +25% |
+| November 2026 | 26 Oct – 6 Dec | 30 | 12 | **+40%** |
 
-### What is actually wrong
+Between a third and two fifths too high in a bad month, and it moved with the calendar rather than staying constant, which is what makes it hard to spot as a systematic error.
 
-`getHandoverAlerts` builds its response from an explicit field whitelist, and `ai_summary` was never in it. The alert card's only free-text line was `note.concerns`, which is blank on most notes.
-
-The result is a card carrying a severity badge, a client name and flag icons — but nothing saying what happened on the visit. The app writes a good one-line account of every visit and then drops it on the floor one layer before it reaches the screen. On a card whose whole purpose is telling the next carer what they are walking into, that is the part that matters.
+The same grid drove the hours and payroll-cost figures, so those were wrong by the same days.
 
 ### The fix
 
-`ai_summary` is returned by the function and rendered in both places: as the card's summary line, and as a "Summary" section at the top of the detail dialog. `concerns` stays exactly where it was, still italicised behind a red rule, because when it is present it is an escalation rather than a description — the two say different things and the card now shows both.
+A `summaryDays` list holds the days the label actually refers to — the grid in day and week view, where the two already agree, and only the in-month days in month view. The three totals reduce over that.
 
-Note the backend write again reported "Revision ... failed" while landing on disk and committing correctly, as it has all session. Worth confirming the summary line appears.
+The grid still renders the adjacent-month cells; nothing changes visually. Only the totals stopped counting them.
 
-Verified: `getHandoverAlerts` bundles; `vite build` clean; `verify:db`, `audit:query-keys`, `audit:query-init` pass.
+The variables were also named `weekRevenue`, `weekTotalHours` and `weekPayrollCost` while serving all three view modes, which is how a month total ended up quietly summing a week-aligned grid. They are now `periodRevenue`, `periodTotalHours` and `periodPayrollCost`.
+
+### What was not wrong
+
+The billing itself is sound, and was checked before changing anything. `resolveShiftBilling` prices a combined team shift once from its first member — one client, one window, one rate — while `getShiftPayrollCost` deliberately sums across the team, which is the correct asymmetry. Team shifts are grouped before any total is taken, so there is no double counting. Cancelled shifts were already excluded.
+
+Verified: month-grid arithmetic checked against date-fns for four months spanning both 35-day and 42-day grids; `vite build` clean; `verify:db`, `verify:recurrence`, `audit:query-keys`, `audit:query-init` pass; the one lint error in the file is the pre-existing unused React import.
 
