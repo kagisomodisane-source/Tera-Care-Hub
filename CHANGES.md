@@ -1,47 +1,50 @@
-## The rate configurator (Base44 checkpoint 6a918094a90b434a6bb9cfc2)
+## Revenue and cost: one rule instead of two (Base44 checkpoint 6a918a2a428071419084b50b)
 
-**Changed**: `src/components/clients/ClientEditDialog.jsx`, `src/components/utils/billingRates.jsx`
+**New**: `src/components/utils/billingCore.js`, `scripts/verify-billing.mjs`, `scripts/sync-billing-core.mjs`
+**Changed**: `billingRates.jsx`, `shared/billingHelpers/entry.ts`, `ShiftCalendarView.jsx`
 
-Four faults, of which the first two cost money.
+### Why it was inaccurate
 
-### 1. Rates were keyed by a vocabulary billing never looks at
+There were two implementations of the billing rules, and they had drifted:
 
-Billing resolves a rate with `service_rates.find(r => r.service_type === shift.visit_type)`. The picker was populated from `SERVICE_TYPES`, which is the `Client.service_types` list — a different vocabulary from `Shift.visit_type`. They overlap in **three** values out of fifteen: `personal_care`, `complex_care`, `live_in_care`.
-
-So eight of the eleven options could never match a shift — `domiciliary_care`, `respite_care`, `nursing_care`, `dementia_care`, `palliative_care`, `supported_living`, `sleep_in` — while there was no way at all to price `domestic` or `community_engagement`, both of which are in live use. A rate set against a dead type silently falls through to `default_hourly_rate`, or to nothing.
-
-Live example: Joanne Clitheroe carries a `domiciliary_care` rate of £29/hr that has never billed anything. Her `personal_care` rate is also £29, so no money was lost there — but only by luck.
-
-The picker now offers `Shift.visit_type` values, plus `overnight_support`, which is not in the schema enum but is used by both live shift data and existing rates.
-
-### 2. "Per Visit" billed per hour
-
-The unit dropdown offers Per Hour, Per Night, Per Shift, **Per Visit**, Per Day. `BILLING_UNIT_TYPES` listed only `hour`, `night`, `shift`, `day`, and `normaliseUnitType` silently falls back to `'hour'` for anything it does not recognise.
-
-A rate saved as "£25 per visit" therefore billed £25 **per hour**:
-
-| Visit length | Before | After |
+| | Frontend — calendar, payroll | Backend — invoices, rate audit |
 |---|---|---|
-| 1 hour | £25 | £25 |
-| 2 hours | £50 | £25 |
-| 3 hours | £75 | £25 |
-| 8 hours | £200 | £25 |
+| `BILLING_UNIT_TYPES` | includes `'visit'` | omits it |
+| `getUnitQuantity('visit')` | 1 charge | one per 24-hour block |
+| Date parsing | date-fns `parseISO` | bare `new Date` |
 
-`visit` is now a real unit meaning one charge per attendance, the same as `shift`. Checked that `hour`, `shift`, `day`, `night` and unrecognised values all behave exactly as before.
+The calendar and payroll read one copy; `generateMonthlyInvoices` reads the other. **What appeared on screen and what was invoiced were computed by different rules.** The per-visit fix from the previous change only reached the calendar — invoices would still have mis-billed it.
 
-No client currently has a per-visit rate saved, so nothing has been mis-invoiced yet — the trap was armed, not sprung.
+This is the same failure as the recurring shifts: one rule, two implementations, silent divergence.
 
-### 3. Editing a rate mutated the client record
+### The redesign
 
-Every row editor did `const next = [...service_rates]; next[i].field = value`. That copies the array but not the objects in it, and `formData` is seeded with the client's own rate objects, so each keystroke wrote straight through to the record React was still rendering from. Cancel discarded nothing.
+`billingCore.js` is now the only place the rules exist. It is deliberately dependency-free — no date-fns, nothing runtime-specific — so the same text runs in both the browser bundle and Deno. A verbatim copy sits in `shared/billingHelpers/entry.ts` between explicit markers, because the two bundles cannot import each other.
 
-All four editors now replace the row instead of mutating it.
+`npm run sync:billing` regenerates the copy from the original; `--check` fails if it is stale, and `verify:billing` runs that check. Drift is now a failing test rather than a silent billing discrepancy. Confirmed: changing one line in the backend copy alone fails the suite.
 
-### 4. Nothing told you a rate was dead
+Date parsing is written out rather than delegated, so the two agree on `"2026-08-19 06:00"` and on date-only strings — previously they did not.
 
-A rate with no service type, a duplicate type — only the first is ever used, since the lookup is a `find` — a type no shift can carry, or a rate of £0 all sit there looking configured. Each row now says which of those applies.
+### Unpriced work is no longer invisible
 
-That is what surfaces problem 1 on existing data: anyone opening Joanne Clitheroe's billing tab is now told the `domiciliary_care` row will never be applied.
+`resolveShiftBilling` already returned `source: 'none'` when nothing was configured, but every caller added `.amount` to a running total, so an unpriced shift was indistinguishable from a cheap one. A margin computed that way is fiction.
 
-Verified: rate arithmetic checked before and after for all units; `vite build` clean; `verify:db`, `verify:recurrence`, `audit:query-keys`, `audit:query-init` pass; the one lint error is the pre-existing unused React import.
+Two new functions make that explicit:
+
+- `resolveShiftCost` mirrors `resolveShiftBilling` for the cost side, and separates *unassigned* (nobody rostered, costs nothing yet) from *no rate on file* (a gap in the staff record). Those were previously both £0.
+- `summariseBilling` returns revenue, cost, margin and hours **plus** `unpricedCount`, `uncostedCount`, the offending shifts, the rate-disagreement warnings, and `isComplete`.
+
+The calendar now takes its three figures from one `summariseBilling` pass, so hours, revenue and cost cannot disagree about which shifts they counted, and shows a badge when the period contains shifts it could not price or cost. The totals no longer look precise while quietly omitting work.
+
+### Verification
+
+`npm run verify:billing` — 40 checks built from real rate configurations in this app: Joanne Clitheroe's £29/hr personal care, MimarCare's £128.60 per-day live-in, Joan Temple's overnight rate, and the `domiciliary_care` rate that matches no shift. Covers unit precedence, the contract-beats-stamped-rate rule, corrupt clock durations, overnight shifts, teams charged once but paid per head, and invoice line wording.
+
+Mutation-tested. Removing `'visit'`, pricing a team per head, silently swallowing unpriced shifts, and drifting the backend copy each fail the checks that name them.
+
+Verified: `vite build` clean; the three billing-consuming backend functions bundle; all six check scripts pass; the one lint error is the pre-existing unused React import.
+
+### Still open
+
+Rates saved against service types no shift can carry — Joanne Clitheroe's `domiciliary_care` — remain unbilled. They are now flagged in the rate editor and counted by `unpricedCount`, but nothing has been migrated, because whether `domiciliary_care` means `personal_care` or `domestic` is a billing decision.
 
