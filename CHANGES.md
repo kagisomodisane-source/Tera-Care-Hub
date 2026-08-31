@@ -1,50 +1,54 @@
-## Revenue and cost: one rule instead of two (Base44 checkpoint 6a918a2a428071419084b50b)
+## Security: close the read path, stop trusting `app_role` (Base44 checkpoint 6a94fa7438bb1383ce4f18f2)
 
-**New**: `src/components/utils/billingCore.js`, `scripts/verify-billing.mjs`, `scripts/sync-billing-core.mjs`
-**Changed**: `billingRates.jsx`, `shared/billingHelpers/entry.ts`, `ShiftCalendarView.jsx`
+**New**: `base44/functions/scopedRead/`, `shared/accessScope/`, `shared/scopeResolver/`, `shared/twoFactorHelpers/`, `src/components/utils/roleResolution.js`, `scripts/verify-access-scope.mjs`, `.github/workflows/verify.yml`
+**Changed**: `dbFactory.js`, `db.js`, `userHelpers.jsx`, `usePermissions.jsx`, `PermissionConfig.jsx`, `shared/authHelpers/entry.ts`, `getClientInfoForShift`, `setup2FA`, `verify2FA`, `regenerate2FABackupCodes`, 29 scheduled functions, 6 entity read rules
 
-### Why it was inaccurate
+### What the audit found
 
-There were two implementations of the billing rules, and they had drifted:
+RLS on this app can only distinguish a platform admin from everyone else. Managers hold platform `admin`, and **no account holds the platform role `staff`** — so in rules like
 
-| | Frontend — calendar, payroll | Backend — invoices, rate audit |
-|---|---|---|
-| `BILLING_UNIT_TYPES` | includes `'visit'` | omits it |
-| `getUnitQuantity('visit')` | 1 charge | one per 24-hour block |
-| Date parsing | date-fns `parseISO` | bare `new Date` |
+```json
+{"$or":[{"role":"admin"},{"role":"manager"},{"role":"user"},{"role":"staff"}]}
+```
 
-The calendar and payroll read one copy; `generateMonthlyInvoices` reads the other. **What appeared on screen and what was invoiced were computed by different rules.** The per-visit fix from the previous change only reached the calendar — invoices would still have mis-billed it.
+the `manager` and `staff` clauses matched nobody, and `{"role":"user"}` was the only clause doing any work. On `Client` that meant any signed-in account could `list()` all 57 fields of every service user — NHS number, address, medications, allergies, behavioural notes, key-safe details. Six entities were like this.
 
-This is the same failure as the recurring shifts: one rule, two implementations, silent divergence.
+Meanwhile `getClientInfoForShift` was carefully gating the same data behind `requireAuth` → `hasActiveAssignment` → field projection → audit. A good lock on the side door, next to an open front door.
 
-### The redesign
+Three more findings:
 
-`billingCore.js` is now the only place the rules exist. It is deliberately dependency-free — no date-fns, nothing runtime-specific — so the same text runs in both the browser bundle and Deno. A verbatim copy sits in `shared/billingHelpers/entry.ts` between explicit markers, because the two bundles cannot import each other.
+- **`staff_view_*` was decorative.** Six per-client visibility flags appeared in four frontend files and *zero* times under `base44/`. Unticking "staff can view care plan" hid a panel and restricted nothing.
+- **`app_role` was self-assignable privilege.** `getRole()` returned `user?.app_role || user?.role`, and every `isAdmin`/`isManagerOrAdmin` in 128 functions resolved through it. `app_role` is an ordinary field on `User`, and self-service edits go through `auth.updateMe`, which writes arbitrary fields — `setup2FA` depends on exactly that.
+- **29 service-role functions had no caller check.** Cron jobs, but also ordinary HTTP endpoints: `resetAnnualLeave`, `deductApprovedLeave`, `archiveAllAppDataToOneDrive`, `notificationService`.
 
-`npm run sync:billing` regenerates the copy from the original; `--check` fails if it is stale, and `verify:billing` runs that check. Drift is now a failing test rather than a silent billing discrepancy. Confirmed: changing one line in the backend copy alone fails the suite.
+### The read gateway
 
-Date parsing is written out rather than delegated, so the two agree on `"2026-08-19 06:00"` and on date-only strings — previously they did not.
+Deleting `{"role":"user"}` alone would have left carers with no client data at all — there are 81 direct read sites. Instead the `db` wrapper (already the single choke point, already enforced by the `no-restricted-syntax` lint rule) now routes reads of `Client`, `CarePlan`, `ClientDocument`, `ClientRiskAssessment`, `ClientLocation`, `Resident` and `User` through a new `scopedRead` function. Same call signature, same return shape — **no call site changed**.
 
-### Unpriced work is no longer invisible
+`scopedRead` reads at the service role, then applies `shared/accessScope`:
 
-`resolveShiftBilling` already returned `source: 'none'` when nothing was configured, but every caller added `.amount` to a running total, so an unpriced shift was indistinguishable from a cheap one. A margin computed that way is fiction.
+- **scope** — the clients on your rota within 180 days either way, plus your active `StaffAssignment` rows, plus the residents and parent organisation of any location you are rostered to. Deliberately wider than `hasActiveAssignment`'s ±24h, which answers a different question;
+- **flags** — `staff_view_care_plan` / `_risk_assessment` drop those records; `staff_view_contact_details` blanks phone, email and emergency contact; `accessible_to_staff` drops a document. Defaults match the schema, so *what staff see on screen is unchanged* — what changed is what they can obtain by other means;
+- **`User`** — colleagues resolve to a 20-field directory projection. Passport number, DBS number, visa and right-to-work status, home address, date of birth, next of kin, `hourly_rate` and the `two_factor_*` fields are withheld. Your own record comes back whole.
 
-Two new functions make that explicit:
+Only then were the six read rules narrowed to admin/manager. `getClientInfoForShift` now applies the same redaction, so it is not a way around the gateway.
 
-- `resolveShiftCost` mirrors `resolveShiftBilling` for the cost side, and separates *unassigned* (nobody rostered, costs nothing yet) from *no rate on file* (a gap in the staff record). Those were previously both £0.
-- `summariseBilling` returns revenue, cost, margin and hours **plus** `unpricedCount`, `uncostedCount`, the offending shifts, the rate-disagreement warnings, and `isComplete`.
+### Privilege has a ceiling
 
-The calendar now takes its three figures from one `summariseBilling` pass, so hours, revenue and cost cannot disagree about which shifts they counted, and shows a badge when the period contains shifts it could not price or cost. The totals no longer look precise while quietly omitting work.
+`resolveRole` makes the platform `role` a ceiling and `app_role` able only to *narrow* it — super_admin/admin/manager are distinctions *within* platform admin. A carer who sets `app_role: 'super_admin'` on themselves gains nothing. Defined once in `shared/accessScope`, mirrored in `roleResolution.js` for the browser, with the two run over the same 12-case table in CI.
+
+### Everything else
+
+- `requireSchedulerOrAdmin` on all 29 service-role functions: a signed-in non-privileged caller is refused; a privileged one is allowed and attributable; no session at all is the scheduler, allowed by default so adding the guard could not silently kill the cron jobs. Setting `SCHEDULER_SECRET` additionally requires a matching header on that path.
+- 2FA backup codes are stored SHA-256 hashed with a `sha256:` prefix. `findBackupCodeIndex` still accepts a plaintext entry so codes printed before this change keep working, and rewrites the survivors as hashes on first use.
+- `requireTwoFactorIfEnforced` finally *reads* the `2fa_enforcement` setting that `admin2FAManagement` has always written. It refuses only roles an administrator has explicitly switched on, and applies at the data gateway rather than at login, so someone caught by it can still reach the enrolment page.
 
 ### Verification
 
-`npm run verify:billing` — 40 checks built from real rate configurations in this app: Joanne Clitheroe's £29/hr personal care, MimarCare's £128.60 per-day live-in, Joan Temple's overnight rate, and the `domiciliary_care` rate that matches no shift. Covers unit precedence, the contract-beats-stamped-rate rule, corrupt clock durations, overnight shifts, teams charged once but paid per head, and invoice line wording.
+`npm run verify:access-scope` — 120 checks: role resolution parity between the two bundles, scope membership, the rota window, redaction against every flag, the directory allowlist, backup-code hashing, and source invariants (read rules stay narrow, every service-role function keeps its guard, no `app_role ||` fallback survives anywhere).
 
-Mutation-tested. Removing `'visit'`, pricing a team per head, silently swallowing unpriced shifts, and drifting the backend copy each fail the checks that name them.
+Mutation-tested — all nine caught: trusting `app_role` again; reopening `Client`'s read rule; dropping a scheduler guard; making redaction a no-op; adding `passport_number` to the directory; storing codes in plaintext; unrouting an entity from the gateway; unbounding the rota window; skipping the scope check.
 
-Verified: `vite build` clean; the three billing-consuming backend functions bundle; all six check scripts pass; the one lint error is the pre-existing unused React import.
+`.github/workflows/verify.yml` runs all six suites, bundles all 157 backend functions, and builds. Lint is reported but not gating: ~930 pre-existing unused-import errors, nearly all `--fix`-able.
 
-### Still open
-
-Rates saved against service types no shift can carry — Joanne Clitheroe's `domiciliary_care` — remain unbilled. They are now flagged in the rate editor and counted by `unpricedCount`, but nothing has been migrated, because whether `domiciliary_care` means `personal_care` or `domestic` is a billing decision.
-
+**Not done, and needs a browser with a staff session**: confirm a non-privileged account still sees the clients it should. The scope rules are verified in isolation, not against live data.
