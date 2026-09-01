@@ -1,3 +1,60 @@
+## The read gateway, restored with enforcement off (Base44 checkpoint 6a9763325213b81e94153958)
+
+**New**: `accessScopePreview/`
+**Restored**: `scopedRead/`, `shared/scopeResolver/`, `dbFactory.js` gateway, `db.js`, the six narrowed read rules
+**Changed**: `shared/accessScope`, `getClientInfoForShift`, `scripts/verify-access-scope.mjs`
+
+### What actually broke
+
+Staff could not see various service user data. Two separate causes, measured against the live data rather than guessed at.
+
+**The field redaction — my error.** I wrote last time that "defaults match the schema, so what staff see on screen is unchanged". That was true of the two files I had read (`ClientDocumentsView`, `ClientProfile`) and false everywhere else:
+
+| field | screens rendering it | screens checking the flag |
+|---|---|---|
+| `care_plan` / `risk_assessment` | 10 | 2 |
+| `phone` / `emergency_contact` | 16 | 3 |
+
+`redactClient` nulled those fields for every caller, so `RiskAssessmentTab`, `ClientProfileOverview`, `ClientInfoDialog`, `ClientOverviewTab` and `ClientProfileHeader` — none of which had ever heard of the flags — rendered blanks. Four clients have `staff_view_care_plan: false`, including Thera East Anglia, where two of the carers work.
+
+**The scope — working as specified, and still too tight to deploy in one step.** Replaying the rules against the real rota:
+
+```
+chimoto.fortunatec       5/14 clients
+faithnamuyomba6          4/14
+kagiso.modisane          2/14
+rosemarychimombegweshe   4/14
+thokopendomoyo79         3/14
+```
+
+Note the window was never the cause: 180 days, 365 days and no window at all produce identical scopes, because the shifts cluster in the current period. Widening `SCOPE_WINDOW_DAYS` would have fixed nothing.
+
+### The correction: separate the hole from the policy
+
+Closing the front door and narrowing what each carer sees were shipped as one change. They are two decisions and only one of them is urgent.
+
+- **`scope_mode`** and **`field_visibility_mode`** live in AppSettings under `client_access_policy`, both defaulting to `off`, both `off | report | enforce`.
+- With both `off`, `scopedRead` reads at the service role and returns exactly what the app returned before it existed — **so the narrowed entity read rules are safe to deploy on their own.** Any signed-in account can no longer `Client.list()` all 57 fields straight from the browser; no carer loses sight of anybody.
+- `report` withholds nothing but records what it would have, so a fortnight of audit lines says what enforcing would cost.
+- Modes are read per request, not cached: turning enforcement off takes effect immediately, because the moment you need that is a carer at a front door at eight in the morning.
+
+`accessScopePreview` (admin only, read-only) answers the question in advance — per staff member, how many service users they would see and which; per flag, how many clients it would affect and their names.
+
+### Verification
+
+`verify:access-scope` — 132 checks. New ones assert that deploying the gateway narrows nothing by itself: defaults are `off`, an unrecognised mode falls back to `off` rather than enforcing, and `off`/`report` return every record while still counting what enforcing would withhold.
+
+It also now counts the thing that caused the outage:
+
+```
+15 screen(s) render a flagged field without checking its flag —
+field_visibility_mode must stay "off" until that is 0, or panels go blank.
+```
+
+Mutation-tested, all 10 caught, including the two that would have reproduced the outage — enforcement becoming the default, and `off` mode filtering anyway.
+
+---
+
 ## SOC 2 controls, and half of the security work restored (Base44 checkpoint 6a975457d85d4eca3edf98d0)
 
 **New**: `shared/accountStatus/`, `shared/auditTrail/`, `shared/retentionPolicy/`, `shared/secretStorage/`, `shared/rateLimit/`, `shared/externalTransfer/`, `manageUserAccess/`, `auditEvent/`, `accessReviewSnapshot/`, `useIdleTimeout.jsx`, `IdleWarningDialog.jsx`, `scripts/verify-compliance.mjs`
