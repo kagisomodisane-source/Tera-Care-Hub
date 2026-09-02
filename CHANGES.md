@@ -1,3 +1,38 @@
+## Withheld is not blank (Base44 checkpoint 6a9805f11ff22d905b60c887)
+
+**New**: `src/components/clients/WithheldValue.jsx`
+**Changed**: `shared/accessScope` (`redactClient` emits `withheld_fields`), 13 screens, `scripts/verify-access-scope.mjs`
+
+### The point
+
+`field_visibility_mode` could not safely be enforced because a withheld field and an empty one looked identical to a carer. Those need opposite responses: one is a decision somebody made, the other is a gap in the care record worth chasing.
+
+`redactClient` now returns `withheld_fields` alongside the nulled values, and `WithheldValue` renders "Withheld by your manager" instead of nothing. The flag rules stay in `accessScope` — the browser reads the outcome rather than re-deriving it, so there is nothing to drift.
+
+### Beyond display
+
+Three of the fixes were not about rendering, and none would have been found by reading the screens:
+
+- **`RiskAssessmentTab`** seeded its editor from `client.care_plan || ""`. With the plan withheld, saving would have written a blank over the real text. It now refuses with an explanation.
+- **`ClientProfile`** interpolates the care plan and risk assessment into five AI prompts. A withheld field would have reached the model as "None recorded", inviting it to write a replacement over a plan it could not see.
+- **`ClientConfigDiagnostics`** counted a withheld contact as missing configuration, sending somebody chasing a record that already exists.
+
+Three of the original fifteen "unfixed" screens were false positives — `LeaveManagement`, `MyLeaveRequests` and `StaffOnboardingWizard` use `emergency_contact` on leave requests and staff records, not clients. The detector now matches on a client-shaped receiver, and accepts either mechanism: `WithheldValue`, or the flag checks `ClientDocumentsView` and `ClientEditDialog` already had.
+
+### Verification
+
+139 checks. The screen count is now an assertion rather than a printed warning, and it reads 0.
+
+Mutation-tested, 14 caught. Two initially escaped, both in files that use the helper elsewhere and so passed the file-level scan — the AI prompt guard and the diagnostic guard. Targeted checks added for each. A third escaped a regex that did not allow the parenthesis a careless edit introduces (`${(client.care_plan || ...)}`); tightened.
+
+**`field_visibility_mode` is now safe to move to `report`, then `enforce`.** `scope_mode` remains a separate decision — see the numbers in `accessScopePreview`.
+
+### Note on losing work to checkpoint restores
+
+This work was written, committed, and then removed by a checkpoint restore (`5cd37a3ad`, 09-02 01:03) which rolled the tree back past it. That is the third time; the earlier one is described two entries down. Restoring a checkpoint discards everything committed after it, including agent work, without warning. It was recovered in full from `a937b874f` — nothing was lost — and the later visit-note work touched none of the same files, so the two merged cleanly. Worth knowing before the next restore.
+
+---
+
 ## The read gateway, restored with enforcement off (Base44 checkpoint 6a9763325213b81e94153958)
 
 **New**: `accessScopePreview/`
