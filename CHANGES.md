@@ -1,3 +1,38 @@
+## Making the controls operable (Base44 checkpoint 6a98119797899b7aea979ce9)
+
+**New**: `clientAccessPolicy/`, `src/components/settings/ClientAccessPolicySettings.jsx`
+**Changed**: `shared/accountStatus` (`changesForStatus`), `manageUserAccess` (`set_status`), `Staff.jsx`, `Settings.jsx`, `scopedRead` (report dedupe), `scripts/verify-compliance.mjs`
+
+Three gaps found by looking at whether the controls built last time could actually be used.
+
+### The audited offboarding path was optional
+
+`status` was in the Staff page's ordinary field allowlist, and `StaffEditDialog` has a status dropdown. So an administrator could put a leaver back to `active` through the profile editor as a plain entity write — no audit record, no assignments touched, bypassing `manageUserAccess` entirely. An audited path you can walk around is not a control.
+
+`status` is out of the allowlist. A status change now goes through `manageUserAccess` with a new `set_status` action that validates against the schema enum. The archive side effects key off the *resulting status* rather than the action name, so `set_status: archived` ends assignments exactly as the offboard button does — `changesForStatus` is the single mapping both use.
+
+### The switches could not be switched
+
+`scope_mode` and `field_visibility_mode` existed and were read on every request, but nothing could change them short of hand-editing an AppSettings row. That made the off/report/enforce design theoretical, and — worse — made turning enforcement *off* in a hurry impossible. The moment somebody needs that is a carer standing at a front door unable to see a care plan.
+
+`clientAccessPolicy` reads and sets both. Reading is open to any signed-in user, since telling a carer why a field is withheld is reasonable; changing requires an administrator and is audited with before and after, at `critical` severity when the change widens access. `ClientAccessPolicySettings` puts it in Settings → System, with the preview table inline so the numbers are in front of you when you decide.
+
+### Report mode would have buried the audit trail
+
+One row per gateway read. A carer browsing a rota triggers dozens a minute, and those rows share a table with the evidence they are supposed to sit alongside — evidence you cannot find is not evidence. Now one row per person per entity per day, held per isolate and rolled over at midnight. The counts are a property of the rota, not of how often somebody refreshed.
+
+### Verification
+
+87 compliance checks, 139 access-scope, all suites green, 162 functions bundle.
+
+Mutation-tested, 13 caught — but only after tightening. Three checks initially passed their own mutation by matching a string that survived it: renaming `SETTABLE_STATUSES` left the identifier in the usage line; deleting `<ClientAccessPolicySettings />` left the import; and the dedupe check matched two names without checking they were wired together. All three now assert the mechanism, not the vocabulary. That is the third time in this session that a first-draft check has been too weak, always the same way.
+
+### One thing worth flagging
+
+Partway through, the report-mode dedupe edit disappeared from `scopedRead` between two verification runs, with no restore in between. Re-applied and confirmed. Along with the three checkpoint restores, that is four times work has silently vanished from this app; the verification suite is the reason each was caught within minutes rather than at an audit.
+
+---
+
 ## Withheld is not blank (Base44 checkpoint 6a9805f11ff22d905b60c887)
 
 **New**: `src/components/clients/WithheldValue.jsx`
