@@ -1,3 +1,46 @@
+## Phantom "pending visit note" (Base44 checkpoint 6a981d49a952dc016e3d8db9)
+
+**New**: `src/components/visit-notes/shiftNoteStatus.js`, `scripts/verify-shift-notes.mjs`
+**Changed**: `offlineDatasets.jsx`, `MyVisitNotes.jsx`, `MyShifts.jsx`, `CompletedShiftsSection.jsx`, `useBadgeCounts.jsx`, `AnomalyDetector.jsx`, `AnomalyDetectorInteractive.jsx`
+
+### What was happening
+
+Carers were being asked to write visit notes for shifts they had already written up.
+
+`archiveOldVisitNotes` sets `status: 'archived'` seven days after a manager reviews a note. The completed-shifts list looks back **fourteen** days. In between, three of the places that answered "does this shift have a note?" were reading a list that had been filtered for *display* first:
+
+| where | filtered out |
+|---|---|
+| `offlineDatasets.selectMyVisitNotes` → My Visit Notes → "Pending Notes" | `archived`, `resident_note` |
+| `useBadgeCounts` (carer badge) | `archived`, `resident_note` |
+| `AnomalyDetectorInteractive` (manager alert) | `archived` |
+
+So the moment a manager reviewed a note and a week passed, the shift came back as outstanding — for the carer who wrote it, for their badge, and for the manager. The note existed, had been read, and had been backed up to OneDrive.
+
+The live data made it unambiguous: notes from 24–25 August were `archived`, notes from 26 August onward were `active`, and the completed-shifts list still covered both.
+
+`visit_type: 'resident_note'` is the same bug latent — a location shift written up per resident would have looked noteless permanently. Not currently triggering, since resident notes are not in use yet, but fixed on the same principle.
+
+### The fix
+
+One rule, in `shiftNoteStatus.js`: **a shift has a note if any note references it.** Not "any note we would currently show you". Archiving is a lifecycle state and per-resident notes are how a location shift is recorded; both are evidence the work was written up. Filtering a list for display and deciding whether a duty was discharged are different questions, and conflating them made carers redo work.
+
+Six call sites now share it. `selectMyVisitNotes` keeps its display filtering and gains a sibling, `selectNotesForNoteIndex`, that filters nothing — the pages fetch unfiltered and apply the display filter only where the list is rendered. A lone draft still does not discharge the duty, which is what the clock-in block is for. The badge fetch went from 100 notes to 500, since at current volume 100 covered about twelve days of a fourteen-day window.
+
+### Verification
+
+`npm run verify:shift-notes` — 37 checks, wired into `verify:all` and CI.
+
+Mutation-tested, 14 caught. Two escaped first time round and both were faults in the checks, not the code: the cancelled-shift case had no `end_datetime`, so it passed whatever `NON_WORKED_STATUSES` said, and the "is the index built from a filtered list" scan used `/\(([^)]*)\)/`, which stops at the first close paren and read `buildShiftNoteIndex((notes || []).filter(...))` as clean.
+
+One check was also too *strict*: it flagged `useBadgeCounts` for filtering resident notes out of the manager review queue, which is deliberate — "which notes need reviewing" is a different question. The invariant is now narrow and exact: whatever is passed to `buildShiftNoteIndex` must not be a filtered expression.
+
+### Second disappearance
+
+The report-mode dedupe in `scopedRead` vanished again between two verification runs — the same hunk, the same way, with nothing touching it in between. Everything else in that file survived. Re-applied and confirmed after checkpointing. That is five losses this session; `verify:all` caught this one within a minute.
+
+---
+
 ## Making the controls operable (Base44 checkpoint 6a98119797899b7aea979ce9)
 
 **New**: `clientAccessPolicy/`, `src/components/settings/ClientAccessPolicySettings.jsx`
