@@ -1,3 +1,32 @@
+## Chase window matched to the archive age (Base44 checkpoint 6a9ade063a5ca3504ca9576a)
+
+**Changed**: `shiftNoteStatus.js` (`NOTE_REQUIRED_WINDOW_DAYS` 14 → 7), `scripts/verify-shift-notes.mjs`
+
+`NOTE_REQUIRED_WINDOW_DAYS` is now 7, matching the age at which `archiveOldVisitNotes` archives a reviewed note. The two windows described different fortnights, which is what let the phantoms exist; they now describe the same week.
+
+The relationship is encoded rather than just the number. `verify:shift-notes` reads the archive age straight out of `archiveOldVisitNotes` and fails if the chase window ever outlasts it — so shortening the archive age, or lengthening the window, is a failing test rather than a silent drift.
+
+### What shortening it costs, and why it is safe
+
+A genuinely unwritten note stops being chased a week sooner. It does not become unwritable, and it does not become invisible:
+
+- the note picker on My Visit Notes passes `windowDays: Infinity`, so an older shift can still be written up;
+- the manager-side anomaly detector has no upper bound at all — completed, no note, more than 24 hours — so an old gap still surfaces to somebody.
+
+Both are now asserted, because "shortening the window quietly made old shifts unwritable" is the obvious way this could go wrong later.
+
+### Verification
+
+42 checks. Seven mutations, all caught: the window drifting back to 14, the archive age being shortened without the window, the window not being applied at all, the note picker inheriting the 7-day limit (twice — unset, and set to a finite number), and the manager backstop gaining an upper bound.
+
+One escaped first time. The checks proved the *module* behaved correctly when handed `windowDays: Infinity`, but never that `MyVisitNotes` actually passed it — so deleting the argument went unnoticed. Testing a function's contract is not the same as testing that its caller honours it.
+
+### Sixth disappearance
+
+`shared/externalTransfer/entry.ts` was gone — the directory remained, empty. Nothing had touched it; it surfaced only because `verify:compliance` could not import it. Recovered in full from commit `3e0096059`. Six losses this session now, across checkpoint restores and whatever is dropping individual files.
+
+---
+
 ## Phantom "pending visit note" (Base44 checkpoint 6a981d49a952dc016e3d8db9)
 
 **New**: `src/components/visit-notes/shiftNoteStatus.js`, `scripts/verify-shift-notes.mjs`
