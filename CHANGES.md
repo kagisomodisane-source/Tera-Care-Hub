@@ -1,3 +1,58 @@
+## The daily notes tab vanishing on shift select (Base44 checkpoint 6aa7334a5deb3b2ccc61d04d)
+
+**New**: `src/components/visit-notes/visitNoteTabConfig.js`, `scripts/verify-visit-note-tabs.mjs`
+**Changed**: `CreateEditVisitNote.jsx`, `useVisitNoteValidation.jsx`, `getLocationResidents`
+
+### What was happening
+
+The form once had two note tabs — `client_note` for a private client's daily note, and `residents` / `resident_notes` for per-resident notes at an organisation location. They were merged into one `daily_notes` tab that adapts to the visit type itself.
+
+Both readers of `visit_note_config.hidden_tabs` then mapped all three legacy ids onto `daily_notes` **unconditionally**:
+
+```js
+["resident_notes", "residents", "client_note"].includes(t) ? "daily_notes" : t
+```
+
+Joanne Clitheroe — a private client, and the busiest in the app — has:
+
+```json
+"hidden_tabs": ["communication", "follow_up", "resident_notes", "residents"]
+```
+
+Somebody once ticked "don't show me the resident tabs" for an individual, which was entirely reasonable: she has no residents. After the merge, that same tick hid her **daily note**.
+
+The tab appeared before a shift was picked because `layoutConfig` was still the default. `loadShiftData` then replaced it with the client's `visit_note_config`, and the tab disappeared. Hence "appears first, then vanishes".
+
+**It was worse than a missing tab.** `VisitNoteTabContent` computes `hideObservations = !canEditAll && (isOrgClient || isPrivateClient)` — and since `isPrivateClient` is defined as `!isOrgClient`, that disjunction is always true. So Observations is hidden from anyone who is not a manager whenever daily notes are in play. With the daily notes tab also hidden, carers had **nowhere at all** to record a narrative note for her. Not cosmetic — a missing care record on the client with the most visits.
+
+### The fix
+
+`visitNoteTabConfig.js` makes the mapping type-aware: a legacy id only hides the merged tab for the kind of visit it originally applied to.
+
+| entry | private client | organisation |
+|---|---|---|
+| `residents`, `resident_notes` | no effect | hides daily notes |
+| `client_note` | hides daily notes | no effect |
+| `daily_notes` | hides | hides |
+
+Both readers now share it, and `isOrganisationVisit` is a dependency of `activeTabs` so the list recomputes when a shift changes the visit type. `legacyHiddenTabEntries` reports the entries whose meaning changed, so an admin can revisit them rather than guess.
+
+### Also
+
+`getLocationResidents` had reverted to calling `auth.me()` directly, bypassing the leaver check — the seventh disappearance, and caught by `verify:compliance` on the first run of this session before any of the above. Restored to `authedUser`.
+
+### Verification
+
+`npm run verify:visit-note-tabs` — 28 checks, built from the real client configs, wired into `verify:all` and CI.
+
+Eight mutations, seven caught. The eighth — deleting the explicit `daily_notes` branch — was an **invalid mutation**: it falls through to the pass-through at the end and returns the same value, so no check should have caught it. The line is redundant by design; it is now commented as such so nobody adds a test expecting otherwise, or "simplifies" it thinking it matters.
+
+### A wrong first hypothesis, recorded
+
+Before access was restored I predicted this was `setSelectedLocation(shift.client_location_id || null)` clearing an already-chosen location, based on `client_location_id` being `""` on some shifts and `null` on others. That was wrong. The location code is fine; the cause was configuration semantics drifting under a UI merge. Worth keeping: the reasoning was plausible and the data supported it, and it still took reading `activeTabs` to find the actual cause.
+
+---
+
 ## Chase window matched to the archive age (Base44 checkpoint 6a9ade063a5ca3504ca9576a)
 
 **Changed**: `shiftNoteStatus.js` (`NOTE_REQUIRED_WINDOW_DAYS` 14 → 7), `scripts/verify-shift-notes.mjs`
