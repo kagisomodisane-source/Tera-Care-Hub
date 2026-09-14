@@ -1,3 +1,39 @@
+## Adding a staff member without leaving the app (Base44 checkpoint 6aa74ad6312c354753d11c87)
+
+**New**: `base44/functions/inviteStaffMember/entry.ts`
+**Changed**: `Staff.jsx`, `syncStaffFromQuickBooks`, `scripts/verify-compliance.mjs`
+
+### What Add Staff actually did
+
+It called `syncStaffFromQuickBooks` with `action: 'invite'`, which filters to **QuickBooks employees not yet in the app**. Two consequences:
+
+- Somebody not in QuickBooks matched nothing. No invitation was sent, an empty `results` array came back, and the frontend's `results.find(...)?.status === 'failed'` was therefore false — so it reported **"Invitation sent!"** having sent nothing.
+- With QuickBooks not connected it threw, and the catch told the administrator to go to *Dashboard → Users → Invite User* and come back afterwards.
+
+Either way the twelve fields the form collects — name, phone, job title, employment type, start date, max hours, hourly rate, leave entitlement — were discarded. The email address was the only thing that travelled.
+
+### Now
+
+`inviteStaffMember` does the whole thing: invite, then write the profile that was typed, so the person appears in the staff list complete rather than as a bare email waiting to be filled in. One action, no dashboard.
+
+It is deliberately unable to grant privilege. The platform role is hardcoded to `'user'` — not a parameter — and `app_role`, `permissions`, `custom_role_id` and `status` are absent from the accepted field list. Making somebody a manager stays a separate decision on Role Management, which matters because the platform role is the ceiling that privilege derives from. `status` stays with `manageUserAccess`, or the audited offboarding path would have a way around itself.
+
+An address that already exists is not re-invited. A live account returns "already on the team"; a revoked one says to reactivate rather than invite, because re-inviting would strand their history.
+
+Adding an account is granting access, so it is audited at `critical` severity — the direction of change an access review looks for.
+
+### Also
+
+`syncStaffFromQuickBooks` now reports addresses it did not invite, instead of returning an empty array that read as success.
+
+### Verification
+
+101 compliance checks. Ten mutations, all caught: anyone being able to add staff, the invite taking a role parameter, `app_role` or `status` becoming settable at invite time, the audit being removed or downgraded to routine, an existing account being silently overwritten, the form reverting to the QuickBooks path or to sending only the email, and the QuickBooks path going back to silent success.
+
+One check was too broad first time — it forbade `syncStaffFromQuickBooks` anywhere in `Staff.jsx`, which would have outlawed the QuickBooks sync panel further down the page. That panel is a different, legitimate feature. The check is now scoped to the Add Staff mutation body. Third time this session that a file-wide assertion has been wrong in that direction.
+
+---
+
 ## The daily notes tab vanishing on shift select (Base44 checkpoint 6aa7334a5deb3b2ccc61d04d)
 
 **New**: `src/components/visit-notes/visitNoteTabConfig.js`, `scripts/verify-visit-note-tabs.mjs`
