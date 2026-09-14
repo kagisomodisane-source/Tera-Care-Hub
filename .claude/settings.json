@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__read_file",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__list_directory",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__grep",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__list_entity_schemas",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__query_entities",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__list_user_apps",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__edit_base44_app",
+      "mcp__a769eedf-d569-4032-a31f-c14608282b39__run_command"
+    ]
+  }
+}
