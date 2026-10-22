@@ -1,3 +1,58 @@
+## "Something went wrong" on the admin Visit Notes page (NOT CHECKPOINTED — see below)
+
+**Changed**: `src/pages/VisitNotes.jsx`
+**Still to do**: `ShiftManagement.jsx` time-override validation, `VisitNoteFormCommunicationLogTab.jsx`, a verify check, and a checkpoint
+
+### What crashed
+
+`date-fns` `format()` throws `RangeError: Invalid time value` on a date it cannot parse. It does not degrade to an empty string. Every guard on the page tested truthiness only:
+
+```jsx
+{note.visit_date ? format(new Date(note.visit_date), 'dd-MM-yyyy') : 'No visit date'}
+{clockIn && clockOut && <span>Actual: {format(new Date(clockIn), 'HH:mm')} - {format(new Date(clockOut), 'HH:mm')}</span>}
+```
+
+A present-but-unparseable value passes that guard and takes down the render, which the error boundary turns into "Something went wrong" for the whole page.
+
+The chain, traced through live data:
+
+1. Shift `6ab12d20036c1da0170f0b19` holds `actual_clock_out` **and** `manager_override_clock_out` of `"92026-02-09T08:00"` — a typo'd year. One shift in 500 checked.
+2. Visit note `6abc06f4eeb9384cd4b977da` (Joanne Clitheroe, visit date 2026-09-29, `manager_reviewed: true`) points at that shift.
+3. The reviewed-notes card list renders the clock-out through raw `format` → RangeError → boundary.
+
+29 September is when reviews stopped working. Admin-only because `VisitNotes.jsx` *is* the admin review page — carers use `MyVisitNotes.jsx`, which does not render shift clock times.
+
+One bad row in one field took out the page for every administrator, for every service user. That is the actual defect; the typo is just what found it.
+
+### What was fixed
+
+All 20 raw `format(new Date(x), ...)` calls in `VisitNotes.jsx` now go through `safeFormat`, which parses, checks `isValid`, and returns a fallback. The `date-fns` import was dropped so the file has one date entry point. Fallbacks were chosen per site rather than left at the default `'N/A'` — `'undated'` for the two generated export filenames, `'No visit date'` and `'N/A'` for the three visit-date labels. The two calls that already had `isNaN(d.getTime())` guards were converted too; they were correct, but leaving them raw leaves the next editor a pattern to copy.
+
+### What is still wrong
+
+**The write site is unvalidated.** `timeOverrideMutation` in `ShiftManagement.jsx` (~line 517) saves `manager_override_clock_in` / `_clock_out` straight through:
+
+```js
+manager_override_clock_out: data.clock_out || null,
+```
+
+Nothing rejects `"92026-02-09T08:00"`. `safeFormat` stops the crash; it does not stop the bad value being stored, and these fields feed payroll. Until that mutation validates its input, the same class of row can be written again — and the next reader may be one that sums rather than renders.
+
+**Two things for you, not for me:**
+
+- Shift `6ab12d20036c1da0170f0b19` needs its clock-out corrected by a human. It is a payroll-affecting time and the obvious de-typo (2026-02-09) is seven months away from the note's visit date of 2026-09-29, so there is no safe guess. I have deliberately not touched it.
+- **Nothing in this section is checkpointed.** The edits auto-committed in the sandbox, but the connection dropped before `create_checkpoint` ran. A Restore or Revert in the builder will discard them.
+
+**275 raw `format(new Date(...))` sites remain** across 105 other files — 290 app-wide before this change. Every one is the same latent crash: a single unparseable value anywhere in its data takes out that page. Worth sweeping as one job.
+
+### Also checked, and clean
+
+`review_flags` and `review_rating` are both correctly guarded. The memos (`isSettled`, `getNoteStaffName`, `combinedVisitNotes`, `filteredNotes`) handle missing records. `SupersededDraftCleanupCard` is defensive throughout. `no-undef` is **not** enabled in `eslint.config.js`, so an unimported identifier passes both lint and `vite build` and crashes only at runtime — running `eslint --rule '{"no-undef":"error"}'` over `src/` surfaced no real undefined identifiers, but that check should be made permanent.
+
+An earlier hypothesis — that `review_rating: null` was failing the schema's `minimum: 1` — was **disproved** by live data: reviews saved with a null rating right up to 29 September.
+
+---
+
 ## Adding a staff member without leaving the app (Base44 checkpoint 6aa74ad6312c354753d11c87)
 
 **New**: `base44/functions/inviteStaffMember/entry.ts`
