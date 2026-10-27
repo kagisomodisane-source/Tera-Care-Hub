@@ -1,3 +1,92 @@
+## The missing calendar toggle was Margin (Base44 checkpoint 6ae079b9e511f272e0964e29)
+
+**Changed**: `ShiftCalendarView.jsx`, `manageAccessRequests`, `shared/billingHelpers/entry.ts` (resynced), `scripts/verify-access-scope.mjs`, `scripts/verify-compliance.mjs`
+
+### The toggle
+
+`summariseBilling` has always returned a `margin`, and its own comment says
+`isComplete` exists "so that the margin can be shown without a caveat". Nothing
+in the app ever read it. The calendar destructured `revenue`, `cost` and `hours`
+from the same object and dropped the fourth figure on the floor.
+
+So the third toggle now exists, beside Hours and Revenue & Costs. It reads
+`periodSummary.margin` rather than subtracting the two displayed numbers — a
+subtraction of two rounded figures is not the same number — and it colours the
+value rose when negative, because a loss-making week is the one thing on this
+screen a manager must not scroll past. Day cells get the same line, suffixed `*`
+when that day had an unpriced or uncosted shift, since a margin built on a
+missing rate is fiction rather than a small error.
+
+The unpriced/uncosted warning chip used to sit inside the Revenue & Costs
+branch. It now covers either toggle, so turning on Margin alone cannot show a
+confident figure with the caveat hidden.
+
+### Two other things in the same code
+
+**The per-shift badge only ever showed cost.** The toggle is labelled
+"Revenue & Costs"; each shift carried a `Cost` badge and nothing else, so every
+shift read as pure expense. It now shows both.
+
+**The day cells and the footer above them were two implementations of one sum.**
+Day totals ran their own `reduce` over `getShiftRevenue`/`getShiftPayrollCost`;
+the footer used `summariseBilling`. They rounded at different points, so a
+month's cells did not have to add up to the figure printed above them, and the
+day cells had no way to report a shift they could not price — a day of unpriced
+work showed a confident £0. Both now come from the summariser.
+
+### The backend was still computing costs the old way
+
+`npm run verify:billing` was already red before any of this. `getStaffHourlyRate`
+had been fixed in the frontend original — first *positive* rate wins, so a blank
+or `0` `hourly_rate` cannot hide a `pay_rate` — but the backend copy still used
+`??`, where `0` is not nullish and therefore wins. Every backend consumer was
+costing those staff at **£0**.
+
+That fix landed in commit "Fix calendar revenue and cost calculation logic",
+which touched the frontend only. The drift check caught it; `npm run sync:billing`
+was the remedy. **Backend cost and margin figures will move** for any staff
+member with a blank or zero `hourly_rate` and a real `pay_rate` — upward, to
+what they are actually paid.
+
+### Two verify checks were wrong, in opposite directions
+
+`verify:access-scope` reported `reconcileShiftVisits` as an unguarded
+service-role function. It is not: the automation functions have since migrated
+to `authorizeBackendJob`, a separate function that resolves a privileged user
+through `resolveRole` and `accessDenialReason` or compares the automation secret
+in constant time — stronger than the `requireSchedulerOrAdmin` the check was
+looking for, which allowed an unauthenticated caller by default. The check now
+recognises all three guards, and the `authorizeBackendJob` route counts only
+when the verdict is *enforced*: invoking it proves nothing, since a function
+that asks and ignores the answer is the hole the check exists to find.
+
+`verify:compliance` flagged `authorizeBackendJob` and `manageAccessRequests` for
+calling `auth.me()` directly. One was a false positive and one was a real hole:
+
+- `authorizeBackendJob` applies `accessDenialReason` itself. It has to, because
+  it must tell "denied" from "no session" to decide whether to fall through to
+  the secret path.
+- **`manageAccessRequests` applied no leaver check at all.** An offboarded
+  account still holding platform admin could approve and deny other people's
+  access requests. It now goes through `authedUser`, which adds the leaver
+  check, the rate limit and the audit on denial.
+
+The check now asks for the leaver check rather than for one particular helper —
+and still fails when `auth.me()` appears without it.
+
+### Verification
+
+`verify:all` green: 139/139, 101/101, 42/42, 28/28, billing rules holding with
+both copies in agreement. Build clean.
+
+Four mutations, all caught: dropping the `if (!gate.authorized)` branch while
+keeping the invoke; removing the gate call entirely; putting
+`manageAccessRequests` back on bare `auth.me()`; stripping
+`accessDenialReason` out of `authorizeBackendJob`. Each source file was restored
+byte-identical afterwards and the suite re-run to confirm it.
+
+---
+
 ## "Something went wrong" on the admin Visit Notes page (NOT CHECKPOINTED — see below)
 
 **Changed**: `src/pages/VisitNotes.jsx`
