@@ -1,3 +1,77 @@
+## Validating the manager time override (Base44 checkpoint 6ae0830ea6d6dc235b8a954d)
+
+**New**: `src/components/shifts/timeOverrideValidation.js`, `scripts/verify-time-override.mjs`
+**Changed**: `ShiftManagement.jsx`, `package.json`
+
+### NaN is why the bad value was stored
+
+Shift `6ab12d20036c1da0170f0b19` carries a clock-out of `"92026-02-09T08:00"`.
+`<input type="datetime-local">` lets a year be typed and its year box takes more
+than four digits, so this is an ordinary slip. It is not valid ISO 8601, so
+`new Date()` rejects it and every comparison on it is NaN.
+
+The mutation *did* guard the duration:
+
+```js
+const durationMinutes = Math.round((endTime - startTime) / (1000 * 60));
+if (durationMinutes <= 0) throw new Error("Clock out must be after clock in");
+```
+
+`Math.round(NaN)` is NaN, and `NaN <= 0` is **false**. The guard passed. So the
+check that looks protective is the reason the value got through — and
+`duration_minutes` was then written as NaN, which `JSON.stringify` turns into
+`null`. The payroll duration was *erased*, not merely wrong. The stored clock-out
+went on to crash every page that formatted it, which is the Visit Notes outage.
+
+Four places compared the same two values and all four were blind the same way:
+the mutation, the submit handler, the Save button's `disabled`, and the duration
+panel. The panel used `>` so it fell to its else branch and displayed
+**"Clock out must be after clock in"** — while the button, testing the same NaN
+with `<=`, stayed **enabled**. The operator saw an error and could still save.
+A single rule now answers for all four.
+
+### The rule
+
+`validateOverrideTimes({ clockIn, clockOut, shiftStart })` parses before it
+compares — reversing those two steps is the original bug — and returns the
+duration it computed, so nothing downstream recomputes it:
+
+- each value must parse, reported against the field that is wrong, with a
+  message that names the year rather than blaming the ordering;
+- a value that parses can still be absurd: `+092026-02-09T08:00` is valid ISO
+  and lands in the year 92026. So a correction must fall within **7 days** of
+  the shift it corrects. A shift with no usable `start_datetime` skips that
+  check, because a shift that does not know when it was is not grounds to block
+  a fix;
+- the duration is tested with `Number.isFinite`, not a comparison a NaN walks
+  through.
+
+Dependency-free, so the page and the verify script import the same file and
+cannot drift.
+
+The broken shift is still correctable through the dialog: it seeds from
+`safeDateParse`, which returns null for the bad value, so the field opens empty
+rather than crashing, and a date near the shift passes the new window.
+
+### Verification
+
+`npm run verify:time-override` — 31 checks, wired into `verify:all`. Suite green:
+139/139, 101/101, 42/42, 28/28, 31/31, billing agreeing, build clean.
+
+Seven mutations, and **the first draft caught only six**. Swapping
+`Number.isFinite(durationMinutes)` for a bare `durationMinutes <= 0` inside the
+module changed nothing observable, because the parse checks reject a NaN before
+the duration test can ever see one. It is unreachable defence in depth — and it
+matters precisely when someone later removes a parse check, which is how the
+value was stored the first time. Resting the last line of defence on the first
+one is what this whole entry is about, so it is now pinned as a source
+invariant. The other six: dropping the parse check; dropping the range check;
+the mutation no longer throwing on a failed result; the NaN-blind guard
+reappearing in the mutation; the Save button returning to a hand-rolled date
+comparison; and validation moving after the update object is built.
+
+---
+
 ## The missing calendar toggle was Margin (Base44 checkpoint 6ae079b9e511f272e0964e29)
 
 **Changed**: `ShiftCalendarView.jsx`, `manageAccessRequests`, `shared/billingHelpers/entry.ts` (resynced), `scripts/verify-access-scope.mjs`, `scripts/verify-compliance.mjs`
