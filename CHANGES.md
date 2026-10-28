@@ -1,3 +1,127 @@
+## Notifications and PWA push (Base44 checkpoint 6ae17431ef8c2580aeff7a33)
+
+**New**: `scripts/verify-notifications.mjs`
+**Changed**: `notificationService`, `savePushSubscription`, `PushInitializer.jsx`, `SmartPushManager.jsx`, `PWAInitializer.jsx`, `public/sw.js`, `package.json`
+
+### What the live data said
+
+34 `PushSubscription` rows. The active ones are current — `updated_date` today,
+complete `endpoint` and `p256dh`/`auth` keys — so subscribing works. But the
+last successful delivery anywhere was **4 October**, and the subscriptions
+created since (17, 22, 23 October) have `last_success_at: null` **and**
+`last_error_at: null`.
+
+No success and no error is not a delivery problem. It means nothing was
+attempted. The send loop records both outcomes reliably — July and August show
+410s turning rows inactive — so the only path that leaves no trace at all is the
+one where `webpush` is null:
+
+```js
+if (needsPush) {
+  if (vapidPublicKey && vapidPrivateKey && vapidSubject) { webpush = ...; }
+}
+...
+if (channels.includes('push') && webpush) {   // false: nothing happens
+```
+
+**VAPID is not fully configured on the server**, and when it isn't, push is
+skipped with no error, no counter, nothing written to any row, and
+`success: true` with `sent.push: 0` returned to the caller. Push can be off for
+a month and the only evidence is an absence. That needs checking in the Base44
+dashboard — `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — and
+`getVapidPublicKey` returning 500 would confirm which. I cannot read deployed
+secrets from here, so that part is yours.
+
+What the code now does is refuse to be quiet about it: the missing variables are
+named in `results.errors`, every notification that wanted push and could not
+have it is counted under `skipped.not_configured`, the response carries
+`push_configured`, and the log line says so. A row whose stored subscription has
+lost its endpoint is counted too, instead of a bare `continue` that made it look
+like the person had push.
+
+### A shared device locked everybody out but the first
+
+A push endpoint identifies the **browser**, not the person. `savePushSubscription`
+treated it as the person's:
+
+```js
+if (existing.some(record => record.user_email !== user.email))
+  return Response.json({ error: 'Forbidden' }, { status: 403 });
+```
+
+So on a shared tablet the second carer to sign in got a 403 — swallowed by the
+client, which still toasted "Push notifications enabled!" — and never received a
+push. Meanwhile the first carer kept being sent to a device they had handed over,
+so their shift and message alerts rendered on screen for whoever was signed in.
+A delivery bug and a confidentiality one in the same four lines.
+
+Ownership now follows whoever is authenticated in that browser, duplicate rows
+for the endpoint are retired so the previous owner stops receiving on it, and the
+reassignment is audited at medium severity, because it changes who receives
+clinical alerts.
+
+The client had the same assumption independently: the "already synced" cache was
+keyed on the endpoint alone in `localStorage`, which belongs to the browser, so
+the next person matched the previous person's entry and was never registered at
+all. The key includes the account now, and with no identity available it syncs
+rather than risk skipping.
+
+### Three more
+
+- **"Push notifications enabled!" was a lie.** It fired on permission grant while
+  `saveSubscription` caught and logged whatever failed underneath. Permission is
+  not registration. The save now throws, the caller reports it, and the success
+  toast comes after the await.
+- **Service worker updates never reached anyone.** No `skipWaiting`, so a new
+  worker waited for every tab to close — which in an installed PWA is close to
+  never. Fixes to push handling could ship and sit there. It now calls
+  `skipWaiting` on install and `clients.claim` on activate.
+- **Offline navigation showed the browser's error page.** `caches.match('/') ||
+  caches.match('/index.html')` cannot work: `caches.match` returns a Promise,
+  which is always truthy, so the second branch was unreachable and a miss
+  resolved to `undefined` — and `respondWith(undefined)` is a network error, not
+  a fallback. Also `.slice(0, -1)` dropped one cache from the delete list on
+  every activation, so a stale one survived each version.
+
+### One way to subscribe
+
+`SmartPushManager` carried a second, complete subscribe path — `requestPermission`,
+`pushManager.subscribe`, `savePushSubscription` — that nothing called, next to
+the live one in `PushInitializer`. Two implementations with one dead is how an
+afternoon goes on fixing the copy that never runs. It is gone, and a check now
+asserts exactly one non-diagnostic file calls `pushManager.subscribe`.
+
+`setupNotificationHandlers` was an empty function that `PWAInitializer` called;
+removed, along with the call. `handleNotification` (unused) passed a `tag` where
+a notification *type* was expected and keyed its cooldown on it, so with no tag
+every notification shared one five-minute bucket and suppressed unrelated ones;
+it reads the type now, and says in a comment that it is unwired.
+
+### Verification
+
+`npm run verify:notifications` — 23 checks, in `verify:all`. Suite green:
+139/139, 101/101, 42/42, 28/28, 31/31, 23/23, billing agreeing, build clean,
+`sw.js` parses.
+
+Thirteen mutations. **Two rounds were needed, and both failures were the same
+mistake in opposite directions:** these are source-invariant checks, and the
+comment above each fix quotes the code it replaced. So the "must be gone" checks
+failed on prose describing the old bug, and the "must be present" check for
+`toJSON()` kept passing after the call was deleted, because the comment
+explaining why `toJSON` matters still said it. Comments are stripped before
+every pattern test now. A check that cannot tell code from a description of code
+punishes explaining yourself.
+
+Also recorded because it cost real recovery: the first mutation run backed each
+file up as `/tmp/$(basename $f)`, and every Base44 function file is called
+`entry.ts`. The backups collided, and the restore overwrote
+`notificationService/entry.ts` with a copy of `savePushSubscription/entry.ts`.
+Recovered from commit `3b74f37c7` after confirming the damage by line count and
+markers rather than by the first three lines, which are legitimately identical in
+both files. Backups are keyed on the full path now.
+
+---
+
 ## Validating the manager time override (Base44 checkpoint 6ae0830ea6d6dc235b8a954d)
 
 **New**: `src/components/shifts/timeOverrideValidation.js`, `scripts/verify-time-override.mjs`
