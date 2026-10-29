@@ -1,3 +1,86 @@
+## One way to add a service user (Base44 checkpoint 6ae34c5634d740699391ba23)
+
+**New**: `src/components/clients/createClientRecord.js`
+**Changed**: `createClient`, `Client` entity, `ClientCreateDialog.jsx`, `ClientOnboardingWizard.jsx`, `ResidentManager.jsx`, `scripts/verify-client-create.mjs`
+
+All three paths now go through `createClient`, so all three get the field
+validation, the allowlist and the `client_created` audit entry. Two of them had
+none of that.
+
+### Why they were bypassing it, and what had to change first
+
+Neither caller could have used the function as it stood. That was the actual
+work; the rewiring was four lines.
+
+**It demanded a date of birth and an NHS number for every private client.** A
+profile started from a location's resident list has neither — all that is known
+is a name and the building. Live data agrees the rule was never real: active
+private clients exist today with both fields empty.
+
+**It returned a four-field summary.** `linkClientAsResident` reads `address`,
+`postcode`, `latitude`, `longitude`, `key_safe_details` and `residency` off the
+new client, so a summary would have left it linking a resident with undefined
+everything. It returns the created record whole now — to a privileged caller who
+just supplied the data and may read Clients anyway.
+
+### The near-miss worth recording
+
+The tidy way to exempt the resident-list stub was to create it with
+`status: 'onboarding'`, which reads as honest: the record *is* thin. I did that
+first.
+
+It was wrong, and checking rather than assuming is what caught it. An onboarding
+client is filtered out of `CarePlanManagement`, the `StaffAssignments` picker,
+`ExternalAccess`, `StaffOnboardingWizard` and the dashboard counts. The resident
+would have existed and been impossible to roster or care-plan — a worse bug than
+the inconsistency being removed, and one that would have looked like a
+permissions problem to whoever hit it. The person is an active service user; it
+is the record that is incomplete, and those are different things.
+
+So the stub stays `active` and declares the gap with `allow_incomplete: true` —
+a control field, stripped before the write, and named in the audit reason. Two
+exemptions now, for two genuinely different situations: onboarding status, which
+is the wizard saying the record is mid-process, and `allow_incomplete`, which is
+a caller saying it knows what is missing. Everything else still has to supply
+both. A date of birth that *is* supplied must still be a real date under either
+exemption — the exemption is for an absent value, not a malformed one.
+
+### email
+
+The wizard has always had an Email input. `Client` had no `email` property, and
+Base44 drops unknown properties silently, so every address typed there has gone
+nowhere — confirmed by querying live records for the field and getting it back
+absent from every one. It was in the backend allowlist with nothing behind it,
+which is why removing it looked right an hour earlier. The property exists now
+and the field is stored.
+
+### What holds it together
+
+`createClientRecord` is the single entry point: one import, one call, and it
+treats a 2xx carrying no record as a failure rather than success.
+`verify:client-create` grew from 12 checks to 31 — every caller must use the
+helper, nothing may call `Client.create` directly, only the helper may invoke
+the function, and the fields of all three callers must be accepted by the
+backend and exist on the entity.
+
+Thirteen mutations across two rounds, all caught: each caller reverting to
+`db.Client.create`; the helper accepting an empty 2xx; the response narrowing
+again; the exemption being removed, and separately widened to everything; the
+stub reverting to onboarding; the stub dropping its flag; a malformed date of
+birth slipping through the exemption; `allow_incomplete` being written onto the
+record; and the exemption going unaudited.
+
+### Verification
+
+`verify:all` green: 139/139, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, billing
+agreeing, build clean, no `no-undef`.
+
+**Worth a live check**: create a profile from a location's resident list and
+confirm it appears in the staff assignment picker, and complete the onboarding
+wizard with an email address and confirm it is stored.
+
+---
+
 ## Saving a new service user (Base44 checkpoint 6ae3497b8749047a47a703c9)
 
 **New**: `scripts/verify-client-create.mjs`
