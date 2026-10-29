@@ -1,3 +1,81 @@
+## Saving a new service user (Base44 checkpoint 6ae3497b8749047a47a703c9)
+
+**New**: `scripts/verify-client-create.mjs`
+**Changed**: `base44/functions/createClient/entry.ts`, `package.json`
+
+### One missing word in a list
+
+`createClient` refuses any field it does not recognise:
+
+```js
+if (Object.keys(input).some((key) => !ALLOWED_FIELDS.has(key) && key !== 'name'))
+  return safeErrorResponse('Request contains unsupported fields', 400);
+```
+
+`ClientCreateDialog` has a **Funding Notes** textarea, holds `funding_notes` in
+its form state, and sends `{ ...formData }`. `funding_notes` was not in
+`ALLOWED_FIELDS`.
+
+So `funding_notes: ""` was in every payload whether anyone typed in the box or
+not, and **every attempt to add a service user from the Clients page was
+rejected before a single value was read**. Not an edge case and not dependent on
+the input: the dialog could not succeed. All the page said was "Failed to create
+client", and the description it passed through was `Request contains unsupported
+fields` — with no field named.
+
+`funding_notes` is a real property of `Client`. It is in the allowlist now.
+
+### The rejection was right; being vague about it was not
+
+Refusing an unknown field is correct here. The alternative — dropping it
+quietly, which `ALLOWED_FIELDS` already does on the way to `Client.create` a few
+lines later — would save a service user with whatever the operator typed
+missing, and nobody would know until someone needed the funding note. That is
+worse than a failed save.
+
+What was wrong is that the message named nothing, so a one-word omission
+presented as "I can't save service users". The 400 now lists the offending
+fields, and the check collects all of them rather than `.some()` tripping on the
+first.
+
+### The check found a second one
+
+`email` was in `ALLOWED_FIELDS`. `Client` has `manager_email` and
+`billing_email` and no plain `email`, so the function was accepting a field it
+had nowhere to put: rejected by the entity, or dropped on the way in, and either
+way advertised as saveable when it was not. The single caller never sent it, so
+nothing was visibly broken — it was waiting for someone to use it. Removed.
+
+### What actually prevents this recurring
+
+Three lists had to agree by hand and nothing compared them: the fields the form
+sends, the fields the backend accepts, and the properties the entity has.
+`verify:client-create` holds them against each other — every form field and
+every payload override must be accepted by the backend, and every accepted field
+must exist on the entity.
+
+Six mutations, all caught: removing `funding_notes` again; **adding a new field
+to the form that the backend does not accept**, which is this bug exactly;
+putting `email` back; reverting to `.some()` with an unnamed error; dropping the
+post-validation filter; and dropping the `super_admin/admin/manager` gate.
+
+### Noted, not changed
+
+Three places create a `Client`. The Clients page goes through `createClient`,
+which validates, filters and audits. `ClientOnboardingWizard` and
+`ResidentManager` call `db.Client.create` directly, so they get none of that —
+no field validation, no `client_created` audit entry. That is worth consolidating,
+but routing them through `createClient` would need the allowlist widened to
+cover what they send, and widening it blind is how this bug reads in reverse. It
+wants doing deliberately rather than as part of a fix to the save button.
+
+### Verification
+
+`verify:all` green: 139/139, 101/101, 42/42, 28/28, 31/31, 23/23, 12/12, billing
+agreeing, build clean.
+
+---
+
 ## Notifications and PWA push (Base44 checkpoint 6ae17431ef8c2580aeff7a33)
 
 **New**: `scripts/verify-notifications.mjs`
