@@ -1,3 +1,81 @@
+## Rate boxes that would not take pence (Base44 checkpoint 6ae5463b6369d0eead306ac7)
+
+**New**: `src/components/utils/numericInput.js`, `src/components/ui/NumberInput.jsx`, `scripts/verify-rate-inputs.mjs`
+**Changed**: `ClientEditDialog.jsx`, `StaffEditDialog.jsx`, `Staff.jsx`, `ShiftCreateDialog.jsx`, `ShiftEditDialog.jsx`, `MyMileageClaims.jsx`, `Client` entity
+
+### The decimal point was deleted as it was typed
+
+Every money box in the app was written like this:
+
+```jsx
+value={formData.default_hourly_rate || ''}
+onChange={(e) => setFormData({ ...formData, default_hourly_rate: parseFloat(e.target.value) || null })}
+```
+
+Type `2`, `3`, then `.` — `parseFloat("23.")` is `23`, `23` goes into state, and
+the `value` prop renders `"23"`. **The point is removed at the moment it is
+typed.** £23.50 cannot be entered at all; only whole pounds go in. That is the
+whole of "unable to adjust billing and rate", and it needed no particular client
+or permission to reproduce.
+
+`|| null` and `|| 0` carried a second bug: `0` is falsy, so a rate of zero was
+silently replaced by the fallback. A rate could not be set to zero, and in the
+`|| 0` sites a cleared box became £0 rather than nothing.
+
+Fourteen fields behaved this way: client default hourly and weekly live-in
+rates, each per-service contracted rate row, staff hourly, night and weekend
+rates, the Add Staff hourly rate, the shift unit and hourly rate overrides, and
+mileage distance and rate per mile. GPS latitude and longitude in the same
+dialog had it too, which matters for geofencing.
+
+### The fix
+
+The box keeps the text; the form gets the number. `numericInput.js` holds the
+rule, dependency-free, and `NumberInput` is the control:
+
+- `parseNumericText("23.")` is `23`, so the number is right while the text still
+  shows the point;
+- `shouldAdoptExternal("23.", 23)` is `false`, so the re-render caused by typing
+  cannot rewrite what was typed — but a genuinely different value, a different
+  client loaded into the same dialog, still replaces it;
+- `"0"` reports `0`, and each field says what a blank box means for it rather
+  than inheriting whichever falsy fallback was nearest.
+
+### And a rate with nowhere to go
+
+`default_weekly_live_in_rate` had a labelled box in the billing tab and **no
+property on the `Client` entity**. Base44 drops unknown properties silently, so
+every weekly live-in rate ever typed was discarded on save — confirmed by
+querying live records for the field and getting it back absent from every one.
+This is the third instance of that exact shape in two days, after `email` on
+`Client` and `funding_notes` in the create allowlist. The property exists now.
+
+### Verification
+
+`npm run verify:rate-inputs` — 46 checks, in `verify:all`. The decimal case is
+tested by walking the keystrokes of `23.50` one at a time and asserting the box
+is never rewritten by the value it just reported.
+
+Eight mutations, all caught: zero collapsing to the empty value; adopting
+external values always, which is the original bug; adopting never, which would
+leave a stale rate on screen for the next client; the component rendering the
+number instead of the text; the component parsing for itself again; the client
+hourly rate and the staff night rate each reverting to parse-on-keystroke; and
+the weekly live-in rate losing its entity property.
+
+`verify:all` green: 139/139, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46,
+billing agreeing, build clean, no `no-undef`.
+
+### Left alone, deliberately
+
+About thirty-five other `parseFloat`/`parseInt`-on-keystroke inputs remain, in
+form builders, workflow designers and capacity fields. They are whole numbers,
+where a decimal point is not wanted and the defect does not bite. They share the
+"cannot be set to zero, cannot be cleared" half of the bug, which is worth a
+sweep but is not what was reported.
+
+---
+
 ## One way to add a service user (Base44 checkpoint 6ae34c5634d740699391ba23)
 
 **New**: `src/components/clients/createClientRecord.js`
