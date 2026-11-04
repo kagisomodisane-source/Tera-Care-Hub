@@ -1,3 +1,93 @@
+## Calendar costing, rates and margins (Base44 checkpoint 6aeaaa253fc95728250a249c)
+
+**New**: `scripts/verify-calendar-costing.mjs`
+**Changed**: `ShiftCalendarView.jsx`, `shiftDisplayCost.js`, `billingCore.js` (+ backend copy), `package.json`
+
+### The warning contradicted the figure
+
+Since the cost pill was built, the calendar has had **two** cost rules.
+`getShiftDisplayCost` pays the night, weekend and daily bands; `summariseBilling`
+went on resolving each shift's flat hourly cost for its count of shifts it could
+not cost. So a shift paid on a night rate with no hourly rate on file showed a
+real cost **and** was counted as uncosted at the same time — the asterisk on
+Margin and the "N uncosted" chip appeared precisely where the bands were doing
+their job, which is the opposite of useful.
+
+`summariseBilling` now takes the cost rule as an argument. One pass produces the
+total and the count under the same rule, and the backend copy is untouched
+because the argument defaults to the hourly rule it always used.
+
+The verify script proves the contradiction is gone by asserting both sides of
+it: with the bands, a waking-night shift costs £95 and nothing is uncosted;
+without them, it costs £0 and one shift is uncosted. That pair is the bug.
+
+### Three passes became one
+
+Each shift was costed three times per render — once by `summariseBilling` for
+its count, once by `sumShiftDisplayCost` for the figure, once more for its own
+pill — and revenue twice. All of it inside `renderDayCell`, which re-runs on
+every render: every toggle click, every drag-hover, every selection change. A
+month on screen meant 35-plus summarise calls, each re-resolving the billing of
+every shift in its day, for a single switch.
+
+Day subtotals are now one memo keyed on the visible days, the per-shift figures
+one memo keyed on the shifts, and `renderDayCell` is a lookup. The checks forbid
+`summariseBilling`, `getShiftDisplayCost` and `getShiftRevenue` from appearing
+inside it at all, which is the mechanism rather than the vocabulary.
+
+`shiftDisplayCost` also parsed the dates three times over per shift — two Dates
+for the hours, a third for the day of the week, on top of the ones
+`resolveShiftCost` already built. It parses once now, and reaches `billingCore`
+by relative path instead of through the aliased re-export that only forwarded to
+it, which is also what makes it loadable outside Vite and so actually testable.
+
+### A broken date read as a weekday
+
+`new Date(shift.start_datetime).getDay()` on an unparseable date gives NaN, and
+`NaN === 0 || NaN === 6` is false — so a shift whose dates are broken quietly
+lost its weekend rate instead of being flagged. The hours went the same way via
+`Math.max(0, NaN) || 0`. Both are explicit now.
+
+Worth recording: **that pair cannot be caught by a behavioural test.**
+`Math.max(0, NaN) || 0` is also `0`, and NaN was already not a weekend, so
+removing the guards changes no observable answer today. They matter the moment
+anyone uses `hrs` or `dow` for something else. Pinned as source invariants and
+labelled as unreachable-by-design, rather than covered by a test that cannot see
+them.
+
+### One control instead of three
+
+Hours stays on its own, because it answers a different question. Revenue, cost
+and margin now share a single **Money** switch — a margin with no sight of the
+two figures it came from invites the wrong conclusion, and revenue without the
+margin was the old blind spot, so reading them apart was never the point.
+
+- **Period**: one pill reading `Month · £3,420 in · £2,180 out · £1,240`, margin
+  highlighted and coloured by sign, with the incomplete caveat attached to the
+  figure it qualifies instead of sitting in a chip of its own. Four chips used to
+  wrap onto three lines on a phone and left the margin furthest from the numbers
+  that produced it.
+- **Day cell**: revenue and cost on one line, margin beneath with its asterisk
+  when that day holds something unpriced. Three stacked label-and-figure rows
+  used most of a month cell.
+- **Per shift**: one pill, `{band} {cost}` — the band label was deliberate work
+  and stays — turning rose when that shift loses money, with revenue, cost and
+  margin in full on the pill itself.
+
+### Verification
+
+`npm run verify:calendar-costing` — 30 checks, in `verify:all`. Suite green:
+139/139, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46, 30/30, billing
+agreeing, build clean.
+
+Nine mutations, and **the first draft caught seven**. Two instructive misses:
+the check for the cost rule being passed matched anywhere in the file, so it
+still passed when the rule was removed from the period summary because the day
+summaries carried one of their own — scoped to each memo now. And the broken-date
+case was behaviour-equivalent, as above.
+
+---
+
 ## Rate boxes that would not take pence (Base44 checkpoint 6ae5463b6369d0eead306ac7)
 
 **New**: `src/components/utils/numericInput.js`, `src/components/ui/NumberInput.jsx`, `scripts/verify-rate-inputs.mjs`
