@@ -1,3 +1,91 @@
+## Joanne Clitheroe's hours were half what they should be (Base44 checkpoint 6aefee2bab3dccb21c05d6ec)
+
+**Changed**: `shiftDisplayCost.js`, `scripts/verify-calendar-costing.mjs`
+
+### What is wrong, and it was mine
+
+Joanne is the only client with `staff_required: 2`, and her visits are stored as
+**one Shift row per carer** — two rows sharing the same start and end. The
+calendar groups them into a single team card, which is right: one visit is one
+charge to the client and two wages to pay.
+
+Four days ago I gave `summariseBilling` a `costResolver` so the calendar's cost
+and its uncosted count would come from the same rule. `summariseBilling` totals
+whatever the resolver reports as `hours`, and the resolver I passed —
+`getShiftDisplayCost` — measured `end_datetime − start_datetime`. That is the
+length of the **visit**, not the hours **worked**: two carers for half an hour
+is 0.5 by that measure and 1 by every other.
+
+So the period chip began reporting 0.5 where the day cells, which use
+`getShiftDurationHours`, still reported 1. For a client whose every visit is
+double-staffed that is not an edge case — **every figure Joanne has, halved in
+the Week and Month totals while her own day cells stayed correct.**
+
+Measured on her real data, a 19:30–20:00 visit with two carers at £12.82:
+
+| | before | after |
+| --- | --- | --- |
+| day cell hours | 1 | 1 |
+| period chip hours | **0.5** | 1 |
+| cost | £12.82 | £12.82 |
+| revenue | £14.50 | £14.50 |
+| margin | £1.68 | £1.68 |
+
+Only the hours were wrong; the money was right. Hours are what the rate is read
+against, though, so a halved hours total makes a correct £29/hr look like £58.
+
+### The fix
+
+`getShiftDisplayCost` now takes its hours from `getShiftDurationHours`, the
+function that already answers this question — and the only one that answers it
+correctly. It is team-aware, it honours a trustworthy
+`scheduled_duration_minutes`, and it handles the shifts stored as `shift_date`
+plus `start_time` and `end_time`, which have no datetimes to subtract. My
+hand-rolled subtraction silently returned 0 hours for those, which would have
+dropped their weekend rate as well.
+
+The lesson is narrow and worth keeping: `summariseBilling` totals the resolver's
+`hours`, so a cost resolver is not free to have its own opinion about how long a
+shift was. The regression check now asserts the summary's hours equal what a day
+cell sums, on a two-carer visit, and a mutation back to end-minus-start fails it.
+
+### Also found, and deliberately not changed: Joanne may be invoiced twice
+
+`generateMonthlyInvoices` iterates **raw Shift rows** and writes one line item
+each:
+
+```js
+for (const shift of shifts) {
+  const billing = resolveShiftBilling(shift, client, ...);
+  lineItems.push({ ... amount: billing.amount });
+}
+```
+
+No team grouping — the calendar groups before billing, the invoice does not,
+though the comment above that call claims "Shared with the shift calendar so the
+two always agree". Two rows per visit therefore become two charges: **£29.00 for
+a 30-minute visit contracted at £29/hour, where £14.50 is due.**
+
+Joanne has roughly four double-staffed visits a day going back months; she is by
+far the main exposure, and one Thera Trust shift on 2026-10-27 carries
+`staff_required: 2` as well.
+
+Not fixed here, and not as an oversight. It changes what clients are charged,
+any invoices already issued would need correcting rather than just the code, and
+whether a second carer is separately chargeable is a contract question per
+client, not a thing to infer from a data shape. It needs a decision first.
+
+### Verification
+
+`verify:calendar-costing` 36 checks; `verify:all` green: 139/139, 101/101,
+42/42, 28/28, 31/31, 23/23, 31/31, 46/46, 36/36, billing agreeing, build clean.
+
+One check had to be retired rather than kept: it pinned the `spanIsReal` guard I
+had added, which `getShiftDurationHours` now subsumes. It asserts the property —
+hours come from the shared rule — instead of the line that is gone.
+
+---
+
 ## Calendar costing, rates and margins (Base44 checkpoint 6aeaaa253fc95728250a249c)
 
 **New**: `scripts/verify-calendar-costing.mjs`
