@@ -1,3 +1,74 @@
+## Team visits are charged per carer (Base44 checkpoint 6aeff4635805e1363c8313f3)
+
+**Changed**: `ShiftCalendarView.jsx`, `scripts/verify-calendar-costing.mjs`
+
+Joanne Clitheroe is charged **£29 an hour per carer** — confirmed, for all her
+visit types. The calendar was charging each visit once.
+
+### The arithmetic, on her real rota for 9–15 November
+
+59 carer rows, 28 visits, 34.50 carer-hours.
+
+| | correct | calendar before |
+| --- | --- | --- |
+| revenue | **£1,000.50** | £471.25 |
+| cost | £443.72 | £443.72 |
+| margin | **£556.78 (55.7%)** | £27.53 (5.8%) |
+
+Revenue was short by **£529.25, 52.9%**. The cost side was right throughout —
+£12.82/hr for Rosemary, Thoko and Kagiso, £13.50 for Valerie, summed per carer.
+Only the charge was halved, which made a client running at 55.7% margin look
+like 5.8%.
+
+Worst single case: Monday 9 November, 11:00–12:00, three carers. £87.00 due,
+£29.00 shown — a third.
+
+### What changed
+
+`billingCore` carries the assumption out loud: "three carers on one visit is one
+charge to the client and three wages to pay". That is a real contract shape, but
+it is not Joanne's, and the calendar applied it to everyone by totalling the
+grouped team cards.
+
+The grid still groups — two carers attending together is one visit to look at —
+but every figure is now totalled from the carer rows underneath: the period
+chip, each day subtotal, and the team card's own pill. That is the same basis
+`generateMonthlyInvoices` already bills on, so the calendar and the invoice now
+agree by construction rather than by coincidence.
+
+This also settles the finding from the previous entry. The invoice charging per
+row is **correct**, not double-billing; the calendar was the side that was
+wrong. Nothing needs crediting.
+
+Single-carer visits never group, so no other client's figures move. The one
+Thera Trust shift carrying `staff_required: 2` does, and is worth a glance
+against that contract.
+
+### A 7p correction to my own sums
+
+I quoted £443.65 cost and £556.85 margin in chat. The code gives £443.72 and
+£556.78. `resolveShiftCost` rounds each row to the penny and then sums, which is
+how the invoice totals; I had summed the unrounded values and rounded once at
+the end. Fourteen 45-minute rows at £9.615 each account for the 7p. The code's
+figures are the ones that match an invoice.
+
+### Verification
+
+41 checks. The team case now asserts £29 revenue and £16.18 margin on a
+two-carer half-hour visit, and asserts that charging the grouped card instead
+would give £14.50 — both sides of the bug, so neither can drift back unnoticed.
+
+Four mutations, all caught: the period total, the day subtotals and the card
+pill each reverting to the grouped card, and the grid ceasing to group at all.
+
+`verify:all` green: 139/139, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46,
+41/41, billing agreeing, build clean.
+
+**Worth checking against a real invoice**: her week of 9–15 November should come
+to £1,000.50 across 59 lines.
+
+---
+
 ## Joanne Clitheroe's hours were half what they should be (Base44 checkpoint 6aefee2bab3dccb21c05d6ec)
 
 **Changed**: `shiftDisplayCost.js`, `scripts/verify-calendar-costing.mjs`
