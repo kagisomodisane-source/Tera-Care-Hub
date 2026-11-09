@@ -1,3 +1,72 @@
+## The empty panel where a carer's client details should be (Base44 checkpoint 6af1a038fc89f28851af37ef)
+
+**Changed**: `getClientInfoForShift`, `ClientInfoSection.jsx`, `scripts/verify-access-scope.mjs`
+
+### What staff were looking at
+
+The screenshot shows the shift Client Info dialog for Joanne Clitheroe: her name,
+the Private Service User badge, Info and Documents tabs — then a **blank white
+card**, then Medical Info. Nothing in between.
+
+It was not a permissions problem and not missing data. Her record is complete:
+address, postcode, phone, emergency contact, a full care plan and risk
+assessment, medications, allergies, mobility notes. All three `staff_view_*`
+flags are `true`. There is no `client_access_policy` row, so both access modes
+default to off and `redactClient` never runs.
+
+The cause is `minimiseClient` in `getClientInfoForShift`, which narrows the
+client to a fixed list before sending it to a non-privileged user. The list
+held the care fields and **no address, no postcode, no phone, no emergency
+contact**. The first card on the Info tab draws exactly those four things, each
+conditionally, so every row was false and the card rendered with no children —
+an empty white panel. Medical Info drew below it because those fields were in
+the list.
+
+So two faults, one visible: a projection that dropped what a carer needs to
+attend a visit, and a card that renders itself when it has nothing to show.
+
+### Narrowing past what the job needs is not a safety measure
+
+I wrote that projection during the access-control work, and trimming the client
+to care-relevant fields was right in principle. Dropping the address was not.
+A carer who cannot find the house cannot do the visit, and nothing in
+`CLIENT_FIELD_VISIBILITY` restricts `address` or `postcode` — there is no rule
+to enforce there, so withholding them enforced nothing.
+
+Phone and emergency contact *are* restricted, by `staff_view_contact_details`,
+and they are gated properly: `redactClient` runs at the top of `minimiseClient`,
+before the projection picks fields up. The flag decides, which is the point —
+not whether somebody remembered to list the field here. Joanne's flag is on, so
+her carers see her husband's number, which is what it is for.
+
+`withheld_fields` is passed through now as well, so a field turned off by a
+manager can say so instead of showing the same blank as a field nobody filled
+in.
+
+### The check caught my own new code
+
+Adding an Emergency Contact row immediately failed an existing check — every
+screen showing a flagged field must be able to say it was withheld rather than
+render blank. It was right: I had written a plain `{client.emergency_contact}`.
+Both that row and the phone row go through `WithheldValue` now, and the row is
+drawn when the field is withheld as well as when it is set, because "turned off"
+and "never recorded" need different responses from the carer.
+
+### Verification
+
+`verify:access-scope` 150 checks. Four mutations, all caught: dropping `address`
+from the projection, dropping `emergency_contact`, projecting before redacting
+instead of after, and letting the contact card render unconditionally again.
+
+`verify:all` green: 150/150, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46,
+41/41, billing agreeing, build clean.
+
+**Worth a look on a carer's phone**: open a shift for Joanne and confirm the
+Info tab now shows 32 Grove Road, NR9 3JP, her number and David's details above
+Medical Info.
+
+---
+
 ## Team visits are charged per carer (Base44 checkpoint 6aeff4635805e1363c8313f3)
 
 **Changed**: `ShiftCalendarView.jsx`, `scripts/verify-calendar-costing.mjs`
