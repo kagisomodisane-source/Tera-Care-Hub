@@ -1,3 +1,40 @@
+## Postcode and phone on the shift card (Base44 checkpoint 6af20c64a880a7621d820969)
+
+**Changed**: `src/pages/MyShifts.jsx`
+
+The shift detail card showed Date, Time, Location and Working with. Location read
+"32 Grove Road, Norwich" — a street and a town, which is not enough to find a
+house in an unfamiliar one — and there was no number to call on arrival.
+
+- **Postcode** joins the address in `getShiftLocationText`, so it reads
+  "32 Grove Road, Norwich, NR9 3JP". That helper feeds the shift list as well as
+  this dialog, so both now carry it and cannot disagree.
+- **Phone** is a new row below Location, the location's number if there is one,
+  otherwise the client's. It is a `tel:` link, because the moment a carer wants
+  it they are standing outside the house with one hand free.
+
+Both come from the client records the page already holds — `db.Client.list`
+through the read gateway — so there is no extra request and nothing new is
+exposed: this is the same data the Client Info dialog shows.
+
+Phone is a flagged field, so it renders through `WithheldValue` and the row
+appears when the number is withheld as well as when it is set. A manager turning
+`staff_view_contact_details` off for a client gets "Withheld by your manager"
+rather than a silently missing row, which is what the access-scope check
+requires of any screen showing a flagged field — it would have failed the build
+otherwise, as it did when the same row was added to `ClientInfoSection`.
+
+Left alone: the phone is not repeated on every card in the list. The address is
+the thing you scan a list for; a number is what you want once you have opened
+the visit.
+
+### Verification
+
+`verify:all` green: 150/150, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46,
+41/41, billing agreeing, build clean, no `no-undef`.
+
+---
+
 ## The empty panel where a carer's client details should be (Base44 checkpoint 6af1a038fc89f28851af37ef)
 
 **Changed**: `getClientInfoForShift`, `ClientInfoSection.jsx`, `scripts/verify-access-scope.mjs`
