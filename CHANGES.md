@@ -1749,3 +1749,94 @@ every representative the moment the row started being read. Caught by resolving
 the live records through the model and comparing against the baseline. The row
 now matches the built-in baseline exactly, so creating it changes nothing on
 screen, which is what a seeded default should do.
+
+## Inviting a representative no longer invites them as staff
+
+Inviting a family member called `base44.users.inviteUser` immediately. That is
+the platform's own staff invitation: it provisions an app account and sends
+Base44's generic "you have been invited to Tera Care Hub" email. So a daughter
+invited to read her mother's care plan was emailed as though she were joining
+the staff team — and when she signed in she landed in the staff app, the rota
+and the dashboards, because nothing marked her as external until an admin later
+pressed **Link Account**.
+
+The flow is now the one an external reader should get:
+
+1. **Invite** — the request is recorded and *they* get an email about the
+   client portal, written for them: who invited them, which service user, what
+   the portal is, what they will be able to see, and that access is not live
+   yet because a manager reviews every request. **No app account is created**,
+   so nothing can mistake them for a colleague.
+2. **Approve** — an admin or manager presses **Approve Access** on the pending
+   invitation. Only then is an account provisioned, and they are emailed the
+   direct portal link.
+3. **Sign in** — Layout sees their invitation and sends them to the portal.
+
+Provisioning at approval rather than at invitation is the part that matters: an
+account that does not exist cannot be mistaken for a colleague's.
+
+### Ordering, deliberately reversed
+
+Invite records first, then emails — the reverse of the old code, whose comment
+said "Send the email first so a failed send doesn't leave an orphaned
+invitation." With a tailored email the trade runs the other way. If the email
+fails, the admin sees a pending invitation and can resend: visible and
+recoverable. If the email went first and the record failed, somebody would be
+told they have portal access that nothing in the app knows about, and nobody
+would ever see it. Approval provisions first, marks accepted second, emails
+last, so a failure to provision never leaves a row claiming access that was
+never granted.
+
+### Three things that followed
+
+**Layout decides from the invitation.** It routed on
+`user.is_client_representative`, which was only written at link time — which is
+exactly why an invited-but-unapproved person saw the staff app. It now asks
+whether they hold a `RepresentativeInvitation` of any status; RLS limits that
+read to their own email, so for a member of staff it returns nothing. A pending
+or suspended person belongs at the portal too, where they are told where they
+stand instead of being shown a dashboard. The redirect also covers every path
+rather than the five that were hardcoded, because a direct link or a stale tab
+put them in the staff app just as surely as signing in did.
+
+**The Active Access list comes from accepted invitations.** It was
+`allUsers.filter(u => u.is_client_representative || u.is_cqc_inspector)`, which
+meant somebody approved but not yet signed in had no User record and so did not
+appear at all — their access existed and was invisible on the page that manages
+it. The invitation is the grant, so the invitation is the list; the User record
+is joined on where it exists, for the name.
+
+**Suspending writes to the invitation.** The switch wrote
+`User.portal_access_enabled`. The portal treats the invitation as authoritative
+and the User flag only as something that can *narrow*, so suspending on the
+User record alone could be undone by the subject — `auth.updateMe` writes their
+own fields — and it did nothing at all for somebody who had never signed in.
+
+`ClientRepresentativeManager` had its own copy of the old invite, which called
+`inviteUser` and recorded no invitation at all, so the person it emailed never
+appeared anywhere for an admin to approve. It goes through the same module now.
+
+### Verification
+
+`verify:portal-access` — 62 checks, up from 51. The new ones drive the module
+over a fake database: that inviting provisions nothing, that the record
+survives a failed send, that duplicates are refused, that approving provisions
+and marks accepted and emails the link, that an account which already exists is
+not a failure, that a failure to provision leaves the invitation pending, and
+that the two emails say what they should. Plus source invariants that no page
+calls `inviteUser` outside the approval path, that Layout's decision reads the
+invitations, and that its redirect is not back to a fixed path list.
+
+Mutation-tested — seven, all caught: provisioning at invite time again; marking
+accepted before provisioning; emailing before recording; dropping the duplicate
+guard; an invite email that claims access is ready; Layout back on the User
+flag; and Layout back to the five hardcoded paths.
+
+Two checks had to be fixed before they bit, both the same failure of my own.
+`check` was synchronous, so every async check returned a promise — truthy, and
+therefore recorded as passing without the assertion inside ever being awaited.
+It collects and awaits them now. And the Layout check matched
+`RepresentativeInvitation` anywhere in the file, which a gutted query survived
+because the string also appears in the queryKey; it reads the decision body
+now. That is twice in two days that a check has agreed with the vocabulary
+rather than the mechanism.
