@@ -1,3 +1,96 @@
+## Pages that would not scroll (Base44 checkpoint 6af51d1655f1e562028c88c3)
+
+**New**: `src/components/layout/appScroller.js`, `scripts/verify-app-scroll.mjs`
+**Changed**: `Layout.jsx`, `useMobileChatViewportLock.jsx`, `ClientOnboardingWizard.jsx`
+
+### Nothing was scrolling the thing that scrolls
+
+The app shell is `h-[100dvh]`. The window and the body never scroll. What
+scrolls is the active bottom-tab panel — `#tab-panel-<id>`, which is
+`overflow-y-auto` — or, on routes outside the four tabs, `<main>`, whose
+`overflow-x-hidden` computes `overflow-y` to `auto`.
+
+Every piece of scroll handling in the app was aimed at the window or the body,
+so none of it did anything:
+
+- **`window.scrollTo(0, 0)` on route change** was a no-op. A page opened at
+  whatever offset the previous one was left at. Tapping into a screen and
+  landing halfway down is indistinguishable, on a phone, from the page being
+  stuck — and it is the most likely thing staff were describing.
+- **The onboarding wizard** scrolled the window on each step, so Next appeared
+  to do nothing until you dragged back up yourself.
+- **The mobile sidebar** set `document.body.style.overflow = 'hidden'`, which
+  held nothing still: the page kept moving under the open menu.
+- **The fullscreen chat** saved the body's styles, set
+  `position: fixed; overflow: hidden`, and restored what it had saved on close.
+  If the sidebar's lock was in force when the chat opened, it saved
+  `overflow: hidden` and put that back on the way out — leaving the app frozen
+  until something else happened to clear it. That is a reload for most people.
+
+Three owners of one piece of global state, two of them aiming at the wrong
+element, and the third restoring the second's mistake.
+
+### One scroller, one counted lock
+
+`appScroller.js` answers both questions in one place. `getAppScroller` returns
+the visible tab panel — a hidden one is `display: none` and has no layout, so
+`offsetParent` is the cheapest way to ask — else `<main>`.
+
+`lockAppScroll` is reference-counted and returns its own release function. The
+first caller captures the original state; only the last release restores it; a
+double release is ignored. That is what lets the sidebar, the chat and Radix
+dialogs overlap without one of them clearing another's lock.
+
+`scrollAppToTopOnNavigation` deliberately does nothing when a tab panel is in
+charge, because a tab panel remembers where it was and puts you back there when
+you return to that tab. Scrolling it on navigation would undo the one bit of
+scroll handling that was working.
+
+### Checked and found innocent
+
+Worth recording so nobody re-investigates them:
+
+- **The wide tables** (`min-w-[900px]` in TrainingHub, ManagerTrainingHub,
+  StaffAvailability, MarChartLiveDialog) are all inside `overflow-x-auto`
+  wrappers. They scroll sideways on purpose and do not stretch the page.
+- **`PullToRefresh`** is careful: a noise floor, a direction test, and it only
+  calls `preventDefault` once it has decided the gesture is a downward pull
+  from the top. Its non-passive `touchmove` listener is the price of the
+  feature, and only the visible tab's listener ever fires.
+
+### Not fixed, and worth deciding on
+
+**Tab pages are mounted once and never unmounted.** `renderContent` skips a tab
+until first visit, then `mountedTabs` keeps it forever, hidden with
+`display: none`. After a carer has been round the bar once, Dashboard, Shifts,
+Messages and Tasks are all live at the same time — four pages' worth of React
+Query subscriptions, refetch intervals and DOM, re-rendering on every
+background refetch. That is a real and growing cost on a mid-range phone and
+the most likely cause of the *performance* half of the report, as distinct from
+the *stuck* half fixed here. Unmounting idle tabs would change how instant tab
+switching feels, so it is a judgement call rather than a bug fix.
+
+### Verification
+
+`npm run verify:app-scroll` — 21 checks, in `verify:all`. The lock is exercised
+through a stub document: two owners, partial release, double release, and the
+original value surviving a full cycle.
+
+Seven mutations, all caught: the lock not counting; release ignoring the count;
+double release double-counting; navigation scrolling the tab panel; hidden
+panels being chosen as the scroller; Layout reverting to `window.scrollTo`; and
+the chat pinning the body again.
+
+The first draft had one false positive, and it was the same trap as last time:
+the check for "nothing scrolls the window" flagged `appScroller.js` itself,
+because the comment explaining the fix quotes the call it replaced. Comments
+are stripped before every "must be gone" test now.
+
+`verify:all` green: 150/150, 101/101, 42/42, 28/28, 31/31, 23/23, 31/31, 46/46,
+41/41, 21/21, billing agreeing, build clean.
+
+---
+
 ## Postcode and phone on the shift card (Base44 checkpoint 6af20c64a880a7621d820969)
 
 **Changed**: `src/pages/MyShifts.jsx`
