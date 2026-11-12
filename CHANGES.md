@@ -1529,3 +1529,113 @@ Mutation-tested — all four caught, including the bug exactly as it shipped, wh
 ### What to do with it
 
 Read the counts after a fortnight, then decide. Enforcing is still a care-safety decision, not a patch: `scope_mode: 'enforce'` scopes clients to the rota and `accessScope` has no `client_representative` branch, so it would cut the representative off from their own service user; `field_visibility_mode: 'enforce'` applies `staff_view_care_plan`, whose schema default is `false`, so carers could lose care plans mid-shift. The representative branch is the piece of work that has to come before enforcement.
+
+## Why a backend fix can sit in `main` for weeks without reaching production
+
+I said last time that every edit to `base44/functions/shared/*` was inert in
+production. **That was too broad, and the real picture is more useful.** Eleven
+of the fifteen modules match the code production runs. Three do not, and
+`externalTransfer` is imported by nothing at all.
+
+### The mechanism
+
+`GET /api/apps/<app>/agent-profile` reports `backend_runtime: "legacy"`,
+`unsupported_reason: "legacy_runtime_not_compiled"`. Nothing is bundled, so a
+function cannot import a sibling by relative path. All 122 real functions
+therefore import their dependencies by absolute published URL, with a nine-hex
+id in the path. Those files are served `cache-control: public,
+max-age=31536000, immutable` — **never overwritten**; a new version gets a new
+id, and the id is hardcoded in every importer. Two generations of the same
+module are visible in the app right now: the published `automationAuth` imports
+`0d74e64e5_authHelpers.js` while source references `94bd56b50_authHelpers.js`.
+
+So a shared module has two copies, and when they diverge nothing complains. The
+source is right, the suite is green, the build is clean, and production runs the
+old code.
+
+An early read of this looked like wholesale staleness because I compared file
+sizes. It isn't: the publish step rewrites relative specifiers into those URLs,
+and a URL is far longer than `'../dbHelpers/entry.ts'`, so a module in perfect
+sync reads as hundreds of bytes different. Normalising import specifiers away
+before comparing is what turned a vague worry into a three-item list.
+
+### What is actually behind, and what it costs
+
+- **`automationAuth`** — the published copy still does
+  `[user.app_role, user.role].some(r => allowedRoles.includes(r))`. That trusts
+  `app_role`, an ordinary User field `auth.updateMe` lets the subject write —
+  the exact hole `resolveRole` exists to close, live in the three automation
+  functions. Source uses `hasRole`, where the platform `role` is the ceiling.
+- **`billingHelpers`** — the published `resolveStaffRate` uses `??` chaining, so
+  an `hourly_rate` of `0` hides a real `pay_rate` and the shift is costed at
+  nothing. It feeds `generateMonthlyInvoices`.
+- **`accessScope`** — behind only by `readAccessPolicy` preferring
+  `setting_value`. **Harmless**, and deliberately so: the `client_access_policy`
+  row carries its modes at the row root too, which is what the published copy
+  reads. Report mode is running because of that decision.
+
+I also have to correct something I said when enabling report mode: that
+`accessScope` has no `client_representative` branch and `enforce` would cut the
+representative off. **`scopeResolver` has that branch, and it is live** — built
+on the same reasoning I reached independently for the portal, reading the link
+from `RepresentativeInvitation` rather than `User.linked_client_id`, with the
+comment explaining that `auth.updateMe` takes arbitrary fields. Enforcement is
+less dangerous than I implied; the `staff_view_care_plan` default remains the
+real hazard.
+
+### Three blockers, two of them now fixed
+
+1. **No listener.** The platform deploys every `functions/<name>/entry.ts` and
+   holds the deployment until something listens; a library exits 0 and the
+   deploy is recorded as failed, which is what put all fifteen "on hold" and
+   made every file write return their failures. `import.meta.main` is false even
+   when the module *is* the deployment, so the obvious guard does nothing. A
+   `setTimeout(..., 0)` that tries `Deno.serve` inside a `try` works in both
+   directions: an importing function calls `Deno.serve` synchronously at its top
+   level, so it binds first and the deferred attempt throws `AddrInUse` and is
+   swallowed; deployed alone, nothing else serves and the check passes.
+2. **Relative imports.** With the listener fixed the error moved on to
+   `unresolved import(s): ../auditTrail/entry.ts`. Rewriting to the URL form
+   does fix the deploy — and **broke the test suite**, because Node's ESM loader
+   refuses an `https:` specifier (`ERR_UNSUPPORTED_ESM_URL_SCHEME`) and
+   `verify:compliance` imports these modules directly. The relative imports were
+   never an oversight; they are what makes a shared module testable, which is
+   also why `accessScope` is written with no imports at all. On this runtime a
+   shared module can be **deployable or testable, not both**. Reverted:
+   testable wins, since blocker 3 means deploying ships nothing anyway.
+   `accessScope` and `billingHelpers` import nothing, so the shim alone is
+   enough and both now deploy cleanly.
+3. **Minting the asset — still blocked.** A successful library deploy does not
+   republish its asset, and importers still pin the old immutable id. Ruled out
+   by trying: `upload_app_asset` refuses `.js`; the assets API is the media
+   library and holds only images; `redeploy-function` works for a flat name but
+   rejects `shared/x` and `shared%2Fx`, so nested functions are unreachable
+   through it.
+
+### The part that matters most
+
+The bug was never the staleness, it was that staleness was **invisible**. So:
+
+```
+npm run audit:published
+```
+
+fetches each referenced published copy, normalises import specifiers away,
+compares the rest byte for byte, and exits non-zero naming the module, the asset
+id its importers pin, and the first differing lines. It needs network, so it is
+deliberately **not** in `verify:all`, which must run offline. A green
+`verify:all` says the source is right; only this says production agrees.
+
+`docs/SHARED_MODULE_DEPLOYS.md` has the full account, every route tried and
+ruled out, and the three ways forward: retry Save & Redeploy in the Base44
+editor now that blocker 1 is gone (untested from here, and the path that minted
+the current ids); ask Base44 to migrate the app off the legacy runtime, which
+deletes this whole class of bug; or inline the shared code into each importer,
+which needs no asset and has precedent in `npm run sync:billing`.
+
+Along the way: `src/components/utils/billingCore.js` had no trailing newline, so
+the extracted region was one line shorter than the copy's and `verify:billing`
+reported a phantom drift. Fixed. And a scare worth recording — a HEAD request to
+these assets returns 404 while GET returns 200, so an integrity sweep built on
+`curl -I` reported two widely-imported modules as missing. Nothing was wrong; a
+real Deno import of `accessScope` succeeds. Check with GET.
