@@ -1639,3 +1639,113 @@ reported a phantom drift. Fixed. And a scare worth recording — a HEAD request 
 these assets returns 404 while GET returns 200, so an integrity sweep built on
 `curl -I` reported two widely-imported modules as missing. Nothing was wrong; a
 real Deno import of `accessScope` succeeds. Check with GET.
+
+## The client portal's permissions are configuration now
+
+What a representative sees was a hardcoded table in `portalAccess.js`, keyed on
+representative type. It is now three layers, each written only by an admin or a
+manager, with later layers winning **per key**:
+
+1. `BUILT_IN_DEFAULTS` in `portalAccess.js` — what the portal did before any of
+   this was configurable;
+2. the `client_portal_defaults` AppSettings row — per-type defaults, edited on
+   the External Access page's new **Portal Settings** tab;
+3. `RepresentativeInvitation.portal_permissions` — one named person's override,
+   set with **Customise Portal** on their card.
+
+Four things are settable at each level: which sections open, which Overview
+details show, whether notes a manager has not released are included, and how
+many notes to load.
+
+Per-key merging is the part that makes it usable: an override holding only
+`{ unapproved_visit_notes: true }` gives that one person unreleased notes and
+leaves everything else following the type, so a later change to the type still
+reaches them. The editor's Inherit switches operate on the stored object rather
+than the resolved one, so what the switches say is what the merge does.
+
+### Where the settings live, and why
+
+On the invitation, not the User record. `RepresentativeInvitation` is
+create/update/delete admin-or-manager, and a representative may read only rows
+whose `email` matches their own — platform identity, the one link in the chain
+they cannot rewrite. Putting permissions on the User record would hand the
+subject their own permissions, which is the whole reason the portal stopped
+trusting User fields in the first place. There is a check that a
+`portal_permissions` planted on a User record grants nothing.
+
+An admin override may **widen** as well as narrow. That is not a hole: the
+narrowing-only rule applies to fields the *subject* writes, and being able to
+show one family member the risk assessment without showing all of them is the
+point of the feature.
+
+### Enforced where it counts
+
+While this was being built, the portal was rewritten by another agent into
+components reading through a new `getClientPortalData` function — a real
+improvement, and it adopted the invitation-as-trust-root rule and extended these
+checks with a server/browser parity test. That parity check then failed, exactly
+as intended, because its tab table and mine had diverged: the server had a
+`documents` tab the browser's model did not.
+
+More importantly, that function resolved tabs from its own hardcoded table, so
+the settings would have been **decorative** — the browser would hide a section
+the server was still sending. So the merge is ported into the function too:
+it reads the defaults row, applies the invitation's override, derives the tabs,
+the unreleased-notes decision and the note limit from the result, and filters
+the optional Overview fields out of the client projection. A field switched off
+is now absent from the response rather than hidden in the browser, so it cannot
+be read out of the network tab.
+
+Three further things the existing checks caught in the new portal code, all
+fixed: `getClientPortalData` read identity with `auth.me()` instead of
+`authedUser`, so an offboarded account could still use it; `PortalCarePlan` and
+`PortalRiskAssessment` rendered `Client.care_plan` and `Client.risk_assessment`,
+flagged fields that would have shown as blanks rather than as withheld — and
+which the function never sends, so those branches were dead; and `ClientPortal`
+scrolled the window rather than the real scroller.
+
+Also gone: the `ACCESS_LEVELS` prose table, which existed twice — in
+`ExternalAccess` and in `ClientRepresentativeManager` — and had drifted in both
+copies. One promised CQC inspectors "Compliance Docs"; the other added "Risk
+Profile" and "Contact Details". None of the three is a portal section. The
+wording now comes from `describePermissions` over the real permissions, so it
+cannot say something the portal does not do. Both pages also now take a
+representative's type from the invitation rather than from
+`user.representative_type`, which the subject can write — it only drove an admin
+display, but it meant a manager was shown whatever a representative had last
+claimed about themselves.
+
+### Verification
+
+`npm run verify:portal-access` — 51 checks, up from 31. The new ones cover the
+three layers merging per key, widening and narrowing, empty overrides,
+unknown tab and field ids being dropped, the note limit being clamped rather
+than trusted, every-section-off denying instead of rendering an empty shell,
+`readPortalDefaults` reading `setting_value` rather than the row root, and six
+source invariants that the *function* still resolves from the settings.
+
+Mutation-tested — eleven, all caught: the server back to its hardcoded tab
+table; the server deciding unreleased notes from the type; the server sending
+every Overview field; the server ignoring the configured note limit; an override
+replacing keys it did not name; unknown ids carried through; the limit
+unclamped; all-tabs-off rendering empty; `readPortalDefaults` reading the root
+only; a User-side `portal_permissions` being trusted; and stored tab order
+leaking to the screen.
+
+Two checks needed strengthening before they bit. One asserted
+`perms.visit_note_limit` appeared *anywhere* in the function, and a mutation
+hardcoding the query back to 500 survived it because the name still appeared in
+the response payload — it now reads the query's actual limit argument. The other
+was `verify:compliance`'s leaver check, which failed on a **comment** of mine
+quoting `auth.me()`; it strips comments now, which is the third time that trap
+has been fixed in this project and the first time the fix was applied to the
+check rather than the wording.
+
+### One thing I got wrong and corrected
+
+I seeded the defaults row before learning about the `documents` tab, so the
+stored row omitted it for every type — which would have *removed* Documents from
+every representative the moment the row started being read. Caught by resolving
+the live records through the model and comparing against the baseline. The row
+now matches the built-in baseline exactly, so creating it changes nothing on
+screen, which is what a seeded default should do.
