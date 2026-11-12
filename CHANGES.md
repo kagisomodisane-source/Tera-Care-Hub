@@ -1434,3 +1434,60 @@ Mutation-tested — all nine caught: trusting `app_role` again; reopening `Clien
 
 **Not done, and needs a browser with a staff session**: confirm a non-privileged account still sees the clients it should. The scope rules are verified in isolation, not against live data.
 
+
+## The client portal trusted fields the representative could write
+
+`ClientPortal.jsx` decided everything from the signed-in user's own record:
+
+```js
+const repType  = user?.representative_type || (user?.is_cqc_inspector ? "cqc_inspector" : "family");
+const clientId = user?.linked_client_id;
+if (!user?.is_client_representative && !user?.is_cqc_inspector) { /* refuse */ }
+if (user?.portal_access_enabled === false) { /* suspended */ }
+```
+
+All five are ordinary `User` properties, and `base44.auth.updateMe` writes arbitrary fields on the caller's own record — the same hole `resolveRole` was written to close for `app_role`, on a surface where the reader is outside the organisation. A representative could enter the portal uninvited, promote themselves from `family` to `cqc_inspector` (which also lifts the approved-notes-only filter), re-point `linked_client_id` at any service user, or un-suspend themselves after a manager revoked access.
+
+The trust root is now the `RepresentativeInvitation` record. Its RLS is create/update/delete admin-or-manager, and a representative may read only rows whose `email` matches their own — and that email is platform identity, not an app field, so it is the one link in the chain they cannot rewrite. `resolvePortalAccess` matches on email itself rather than relying on the read rule, so a widened rule cannot widen access on its own. Self-writable fields are still read where they *narrow*: `user.portal_access_enabled === false` still suspends, because the worst a subject can do with that is lock themselves out.
+
+The same rule now has a name in two places: platform identity and admin-written records may grant; anything the subject can write may only take away.
+
+### The portal asked for every service user and threw all but one away
+
+```js
+const all = await db.Client.list();
+return all.find((c) => c.id === clientId) || null;
+```
+
+`Client` is a gateway entity, so that is a `scopedRead` call — and with the policy at its defaults (below) it returns every client in the service, unredacted, to the representative's browser. The UI rendered one; the response carried all of them. Now `db.Client.get(clientId)`.
+
+Two more of the same shape: `portal_access_enabled` was checked *after* all five queries had fired, so a suspended account still fetched the records and had a notice drawn over the top of them; and `approved_for_client_view` was applied with `.filter()` after fetching 50 notes, so notes a manager had not released arrived anyway. Every query is now gated on the grant, and the approved-notes decision is in the query criteria — with the browser-side filter kept as well, because compound-filter behaviour through the SDK path is unsettled.
+
+Also seven raw `format(new Date(...))` calls, the crash that took out Visit Notes, on a page where one malformed `date_of_birth` white-screens the lot. All on `safeFormat` now. `"MMM d, yyyy 'at' HH:mm"` was missing from `FORMAT_MAP`, so it rendered month-first; added.
+
+### Verification
+
+`npm run verify:portal-access` — 31 checks: the grant and every denial over a table of invitations, each self-writable field proved unable to grant or widen, unknown representative types falling back to the narrowest tab set, and source invariants on the page (one client not all, every query gated, the notes filter in the criteria, no `date-fns`).
+
+Mutation-tested — all eleven caught: restoring `Client.list()`; ungating a query; dropping `approved_for_client_view`; granting from `linked_client_id`; letting the User flag un-suspend; accepting any invitation status; widening the unknown-type fallback; skipping the type allowlist; restoring `date-fns`; deleting the `FORMAT_MAP` entry; skipping the email match.
+
+One check was a tautology on first writing — it compared the resolved type against the same constant that produced it, so moving the fallback to `family` passed. It asserts the literal now. That is the second time in this project a check has agreed with whatever the code said rather than with the rule.
+
+### Still open: the gateway is deployed but switched off
+
+`readAccessPolicy` reads `AppSettings` where `setting_key = 'client_access_policy'`. **There is no such row** — 22 settings rows exist, none of them that one — so `scopeMode` and `fieldVisibilityMode` both default to `off`, and `scopedRead` takes its own documented short circuit:
+
+```js
+if (policy.scopeMode === 'off' && policy.fieldVisibilityMode === 'off') {
+  // read as the service role and return, exactly as the app behaved before
+}
+```
+
+So, today, for any signed-in account including the one client representative:
+
+- `db.Client.list()` returns every client, and because `redactClient` runs only inside `applyScope`, `withheld_fields` is never set — which means `staff_view_care_plan` and `staff_view_risk_assessment` have no effect anywhere, and the `WithheldValue` UI that depends on them is decorative;
+- `db.User.list()` returns full personnel records, not the 20-field directory: `passport_number`, `dbs_number`, visa and right-to-work status, home address, date of birth, next of kin, `hourly_rate`. The projection is written, tested and not running.
+
+That is a configuration row, not a code change, and it is **not** a safe thing to flip unattended. `scopeMode: 'enforce'` scopes clients to the rota, and `accessScope` has no `client_representative` branch — it would cut the live representative off from their own service user. `fieldVisibilityMode: 'enforce'` applies `staff_view_care_plan`, whose schema default is `false`, so carers could lose care plans mid-shift.
+
+`report` mode is the safe first step and exists for exactly this: `applyScope` filters and redacts nothing in that mode, only counting what enforcing *would* withhold, once per person per entity per day. A fortnight of those lines says what enforcing costs before anyone commits to it. Needs a decision, not a patch.
