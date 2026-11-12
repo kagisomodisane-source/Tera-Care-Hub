@@ -1491,3 +1491,41 @@ So, today, for any signed-in account including the one client representative:
 That is a configuration row, not a code change, and it is **not** a safe thing to flip unattended. `scopeMode: 'enforce'` scopes clients to the rota, and `accessScope` has no `client_representative` branch — it would cut the live representative off from their own service user. `fieldVisibilityMode: 'enforce'` applies `staff_view_care_plan`, whose schema default is `false`, so carers could lose care plans mid-shift.
 
 `report` mode is the safe first step and exists for exactly this: `applyScope` filters and redacts nothing in that mode, only counting what enforcing *would* withhold, once per person per entity per day. A fortnight of those lines says what enforcing costs before anyone commits to it. Needs a decision, not a patch.
+
+## Report mode is on — but the switch had to be connected first
+
+Asked to create the `client_access_policy` row, I found the row was not the only thing missing. `readAccessPolicy` read the two modes from the row's **root**:
+
+```js
+const scope  = settingsRow?.scope_mode;
+const fields = settingsRow?.field_visibility_mode;
+```
+
+Neither `scope_mode` nor `field_visibility_mode` was a declared property on `AppSettings`, and Base44 drops undeclared properties on write — the fourth time that has bitten this app. So a row created the obvious way came back without them, `readAccessPolicy` saw `undefined`, and the policy resolved to `off`. **The gateway was not switched off; it was unconnected.** No row of any shape could have turned it on, and writing one would have produced something that looked configured and did nothing — the worst outcome, because it ends the investigation.
+
+Two things were wrong at once, and they wanted opposite fixes:
+
+- `AppSettings` keeps a setting's data in `setting_value`, an object. That is what the schema says the column is for and what the `2fa_enforcement` read in `scopedRead` does: `row?.setting_value?.enforce_2fa_for_roles || row?.enforce_2fa_for_roles`. `readAccessPolicy` now follows the same convention — `setting_value` first, root as fallback — so a row written either way works.
+- But that corrected function **is not live**. `scopedRead` imports `accessScope` from a pinned, content-hashed published asset (`35583f2bd_accessScope.js`), and `functions/shared/*` has been failing to deploy for the whole of this work. Fetching that URL with `-L` (a bare `curl` returns a 302 and 0 bytes, which is why earlier attempts were inconclusive) returns 14,458 bytes of the **old** function: `setting_value` appears zero times. So every edit made to any `shared/*` module is currently inert in production. That is now a confirmed fact rather than an open question.
+
+Which pointed at the way through. The deployed reader looks at the root; the root fields merely weren't declared. So both modes are now declared on `AppSettings` with an `off`/`report`/`enforce` enum, and the row carries them **at the root and inside `setting_value`** — the root for the code that is actually running, `setting_value` for the convention and for the corrected reader once it deploys. Verified against the stored row, read back fresh rather than trusting the create response:
+
+```
+deployed  readAccessPolicy(row) = {"scopeMode":"report","fieldVisibilityMode":"report"}
+corrected readAccessPolicy(row) = {"scopeMode":"report","fieldVisibilityMode":"report"}
+corrected on no row             = {"scopeMode":"off","fieldVisibilityMode":"off"}
+```
+
+Report mode changes nothing anyone sees. `applyScope` filters and redacts only under `enforce`; under `report` it returns every record and just counts what enforcing would have withheld, once per person per entity per day. Confirmed: `scopeMode=report` returns 2/2 records while still reporting `outOfScope=1`; `enforce` returns 1/2. The one real consequence is that non-privileged reads no longer take the `off`/`off` short circuit, so they now do a bounded `listAll` and may write one audit row a day. Admins and managers return earlier and are untouched.
+
+### The checks agreed with the code instead of the rule
+
+The existing suite tested `readAccessPolicy` twice: an absent row, and a row with invalid values. Both expect `off` — which is also what a function reading the wrong field returns for *every* input, including a correct row. That is precisely why this shipped: **a suite that only ever asserts the default cannot tell a working switch from a dead one.**
+
+`verify:access-scope` is now 158 checks, with four that assert a row meant to turn something **on**, and two source invariants that the modes stay declared on `AppSettings` with `report` a legal value — because undeclaring either one silently reverts the live policy to `off` with no error anywhere.
+
+Mutation-tested — all four caught, including the bug exactly as it shipped, which the old suite passed: restoring the root-only read; undeclaring `scope_mode`; narrowing the enum so `report` is illegal; making `readAccessPolicy` always return `off`.
+
+### What to do with it
+
+Read the counts after a fortnight, then decide. Enforcing is still a care-safety decision, not a patch: `scope_mode: 'enforce'` scopes clients to the rota and `accessScope` has no `client_representative` branch, so it would cut the representative off from their own service user; `field_visibility_mode: 'enforce'` applies `staff_view_care_plan`, whose schema default is `false`, so carers could lose care plans mid-shift. The representative branch is the piece of work that has to come before enforcement.
