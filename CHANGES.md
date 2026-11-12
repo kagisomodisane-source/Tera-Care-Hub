@@ -1913,3 +1913,71 @@ accepts an invitation.
 Two existing checks failed when the contract changed, which is the suite doing
 its job — they called `approveRepresentative` without an approver, and now say
 so instead of passing.
+
+## End-to-end test of the invite and approval flow — and the bug it found
+
+Ran the real module functions against the real database with a test identity
+(`portal-flow-test@example.com`, a reserved domain that delivers nowhere),
+stubbing only the two outward-facing calls — the email send and
+`base44.users.inviteUser` — so nothing was mailed and no account was created.
+Both test records were deleted afterwards.
+
+### What passed
+
+- **Invite provisions nothing.** The payload is recorded as `pending` with the
+  email lowercased, and no app account is created. The email reads as a portal
+  invitation and says access is not live until a manager approves.
+- **Every field survives the write.** The live row came back with all of them
+  intact, including `approved_by_email`, `approved_by_name` and `approved_at`
+  after approval — the silent-drop failure that has bitten this app four times
+  did not happen.
+- **Pending grants nothing.** Browser and server both refuse with
+  `invitation_not_accepted`.
+- **Someone else's invitation grants nothing** — `no_invitation`.
+- **A fully forged User record grants nothing.** With
+  `is_client_representative`, `is_cqc_inspector`, `representative_type`,
+  `linked_client_id`, `portal_access_enabled` and even a `portal_permissions`
+  object planted on the User, access was still refused and `clientId` was null.
+- **Approved resolves identically in both places.** Browser and server agreed
+  on the client, the six tabs, the unreleased-notes decision and the note limit
+  — for type defaults, for a per-person override (`overview` only, unreleased
+  notes on, limit 3), for suspension, and for revocation.
+- **Against the live records**, both real representatives resolve correctly,
+  and `info@`'s revoked Joanne row neither grants nor blocks their accepted
+  MCCS row.
+
+### What failed, and why the unit checks could not have caught it
+
+**Every audit write would have failed, silently.** The live entity rejected the
+entry 422: `AuditLog` requires `user_role`, which the payload omitted, and its
+`event_type` is an enum with no `access_control` member. Because the audit
+write is deliberately best effort — a failed log must not leave an approved
+person without access — it would have swallowed the rejection. Approval would
+have worked and the trail I had just described as making it answerable would
+have been empty.
+
+The checks passed because they drive approval against a **fake database that
+accepts anything**. That is the gap: a double with no schema cannot reject what
+the real entity will.
+
+`event_type` is now `role_change`, which is what the enum offers for a change
+to what somebody may do, and `user_role` is supplied from the approver.
+
+Three checks now validate the payload `recordApprovalAudit` builds against
+`AuditLog`'s own schema file: that it supplies every required field, that every
+enum field holds a permitted value, and that it writes nothing undeclared
+(which Base44 would drop). Re-introducing the exact bug fails two of them by
+name; adding an undeclared field fails the third. The corrected payload was
+then written to the live entity successfully, metadata intact.
+
+### Still not tested
+
+Email delivery and `base44.users.inviteUser` were stubbed, so the one thing
+that remains unproven is whether an approved person can complete sign-in from
+the provisioned account. That needs a real mailbox. Everything up to and
+including the grant, and everything the portal does with it, is now exercised
+against the live database.
+
+Also worth knowing: the two invitations already accepted in the app have
+`approved_by_email` null, because they were approved before the approver fields
+existed. Not a fault — just history that cannot be reconstructed.
