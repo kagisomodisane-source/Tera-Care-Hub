@@ -1840,3 +1840,76 @@ It collects and awaits them now. And the Layout check matched
 because the string also appears in the queryKey; it reads the decision body
 now. That is twice in two days that a check has agreed with the vocabulary
 rather than the mechanism.
+
+## Admin approval: audited first, then strengthened
+
+Asked to confirm approval is still required, I audited every path that could
+grant portal access rather than assuming the new flow was airtight.
+
+**It was.** The portal grants on `invitation.status === 'accepted'`, and:
+
+- `RepresentativeInvitation` RLS makes **create and update admin-or-manager**.
+  The check is on `user_condition.role`, the *platform* role, which the
+  platform grants and a user cannot set on themselves — unlike `app_role`. So a
+  representative cannot accept their own invitation.
+- Only **one** place in the whole codebase sets `status: 'accepted'` on an
+  invitation: `approveRepresentative`.
+- **No backend function writes invitations at all.** The three that touch the
+  entity (`scopeResolver`, `generateVisitNotePdf`, `getClientPortalData`) only
+  read it. A service-role write would bypass RLS entirely and would have been
+  a way to approve without being an admin; there isn't one.
+- The portal's preview path in `getClientPortalData` is gated on
+  `user.role === 'admin'` — the platform role again, not a self-writable field.
+
+What was missing was not enforcement but **accountability and deliberateness**.
+
+### Who approved it
+
+The invitation recorded `accepted_date` and nothing else, so "who let this
+family member see this person's records" had no answer. Approval now requires
+an approver and records `approved_by_email`, `approved_by_name` and
+`approved_at`, and refuses outright if the approver cannot be established —
+before any account is provisioned, so a failed check cannot leave a half-made
+grant.
+
+That requirement is not itself a security control — RLS is — and the comment in
+the code says so, to stop a later reader mistaking a UI-supplied value for a
+gate. It is the accountability record.
+
+Every access decision also writes an `AuditLog` entry: approving, revoking,
+suspending and restoring, each naming the approver, the representative, the
+service user and the invitation. The write is best effort and happens *after*
+the grant: a failed log must never leave someone who was approved without
+access, which is why the approver is stamped on the invitation as well — the
+answer survives even if the log write is lost.
+
+### Approving is now a decision, not a click
+
+It was a single button on a list row. It now opens a confirmation stating
+exactly what is being granted: who they are, which service user's records,
+which sections they will be able to read (from the live permissions, including
+any per-person override), that a sign-in will be created, that they will be
+emailed the link, and that the approver's name is recorded. Granting a stranger
+sight of someone's care records should take a moment's thought.
+
+### Pinned
+
+`verify:portal-access` — 71 checks, up from 62. The new ones assert the RLS
+rules themselves: that create and update stay platform-role checks limited to
+admin and manager, that no write rule matches a caller field (which is how
+self-approval would appear), that the read rule still matches the caller's
+email, that the approver fields stay *declared* (Base44 drops undeclared
+properties, so undeclaring one silently loses the audit trail), that approval
+refuses an unknown approver without provisioning, that it stamps and audits,
+that a failed audit does not undo the grant, that `accepted` is set in exactly
+one place, and that no backend function writes invitations.
+
+Mutation-tested — seven, all caught: opening the update rule to any signed-in
+user; making the rule match the caller's own email, which is self-approval;
+undeclaring `approved_by_email`; dropping the approver requirement; not
+stamping the approver; not writing the audit entry; and a second code path that
+accepts an invitation.
+
+Two existing checks failed when the contract changed, which is the suite doing
+its job — they called `approveRepresentative` without an approver, and now say
+so instead of passing.
