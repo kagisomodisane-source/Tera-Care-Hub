@@ -2057,3 +2057,59 @@ parses `REVOKED_STATUSES` out of `shared/accountStatus` and asserts membership
 of that. Third time this session a check has agreed with the vocabulary instead
 of the mechanism; the shape of the mistake is always the same, comparing a
 result against the thing that produced it.
+
+## The download menu was off the side of the screen
+
+The visit-note download sheet rendered half off the right edge, its options cut
+to "Download to de…" and "Open in new ta…".
+
+It was not a width problem, and the `max-w-[calc(100vw-16px)]` already on it
+could never have helped. `dropdown-menu.jsx` renders a bottom sheet on mobile
+with `position: fixed; bottom/left/right: 0`, which reads as "pin me to the
+viewport" — but Radix wraps dropdown content in
+`[data-radix-popper-content-wrapper]`, positioned at the trigger with a
+`transform: translate(x, y)`. **A transformed ancestor becomes the containing
+block for its fixed-position descendants**, so those zeroes resolved against a
+wrapper parked over the download button near the right-hand edge, not against
+the screen.
+
+Measured in a real browser at 390px wide, reproducing the wrapper and the
+sheet: the sheet was laid out at **x=286, width 192, right edge 478** — 88px
+past the edge of the screen, which is precisely the two truncated labels. With
+the fix: **x=0, width 390, flush to the bottom**.
+
+The wrapper is created by Radix and accepts neither `className` nor `style`
+from the call site, so it has to be reached by selector. `index.css` now
+neutralises it, scoped with `:has()` to wrappers that actually contain one of
+our sheets so ordinary desktop dropdowns are untouched:
+
+```css
+[data-radix-popper-content-wrapper]:has(> .mobile-action-sheet) {
+  position: fixed !important; inset: 0 !important;
+  transform: none !important; min-width: 0 !important;
+  pointer-events: none !important;
+}
+```
+
+`pointer-events` matters: stretching the wrapper over the whole viewport would
+otherwise cover the dimmed backdrop and stop taps closing the sheet, so the
+wrapper passes them through and the sheet takes them back. There is an
+`@supports not selector(:has(*))` fallback that centres the sheet instead —
+still wholly on screen, just not flush to the bottom.
+
+This fixes every mobile dropdown in the app, not only this one, since they all
+go through the same component.
+
+### Verification
+
+Checked in a browser rather than by reasoning: `fixed.png` in the scratchpad,
+and the before/after measurements above. `verify:app-scroll` is now 25 checks,
+with four pinning the mechanism — that the sheet keeps the class the stylesheet
+targets, that the rule still removes the transform, that the backdrop stays
+tappable, and that the no-`:has()` fallback survives.
+
+Mutation-tested — four, all caught. One survived at first: deleting the class
+from the code still passed, because the class name also appears in the comment
+explaining the rule. The check strips comments now. That is the fourth time
+this session, and this one was written minutes after I documented the same
+trap — the lesson evidently needs to live in the checks, not in my memory.
