@@ -1981,3 +1981,79 @@ against the live database.
 Also worth knowing: the two invitations already accepted in the app have
 `approved_by_email` null, because they were approved before the approver fields
 existed. Not a fault — just history that cannot be reconstructed.
+
+## Representative cards, and a real way to take access away
+
+### The layout
+
+The card put a fixed-width column of buttons beside the details with
+`justify-between`. On a phone that column took most of the width, so three
+things went wrong at once: the email ran underneath the buttons, the "Can see"
+badges had so little room that each landed on its own line, and the avatar
+indented every line below it so nothing shared a left margin.
+
+Now there is one left edge. A header row carries the avatar, name, email and
+status badges; the service user and relationship sit below it as a small
+definition list aligned to the card's own edge rather than the avatar's; the
+permissions block is full width, so the badges wrap across it as they were
+meant to. The actions moved to their own row under a divider, two by two, and
+return to a column beside the card at `sm` where there is room.
+
+### Revoke and delete
+
+There was only a suspend toggle and, for pending invitations, revoke. Now both
+withdrawal paths exist as distinct decisions, because they have different
+consequences:
+
+- **Revoke** — ends access and keeps the record. Reversible by approving again.
+- **Delete** — erases the record, for an erasure request. Not reversible, and
+  gated on typing DELETE.
+
+Both take an optional reason, which goes to the audit log and deliberately not
+into the email: the reason is for the care team, not for whoever can read that
+inbox.
+
+**The ordering is the substance, and it is not the obvious one.**
+
+1. **Audit first**, to a different entity, so the decision survives the record
+   it describes being deleted.
+2. **Close the sign-in**, by setting `User.status`. This is what actually ends
+   a live session: `accessDenialReason` in `shared/accountStatus` refuses any
+   account whose status is `inactive` or `archived`, and `authedUser` applies
+   that on all 121 functions that share it. Revoke uses `inactive`, delete uses
+   `archived`.
+3. **Withdraw the grant** on the invitation, so a failure between here and the
+   delete leaves access closed rather than open.
+4. **Delete the record**, and email last, because a failed send must not leave
+   access open.
+
+Closing the sign-in before deleting is not tidiness. Portal access comes from
+the invitation, and Layout decides who is an external reader the same way.
+Delete the invitation while the login still works and the next sign-in finds
+an app with no idea they are external — it would show them the **staff shell**.
+So delete refuses outright if it cannot close the account, rather than leaving
+a working login with nothing behind it.
+
+### Verification
+
+`verify:portal-access` — 84 checks, up from 74. The new ones drive both paths
+over a database double that records the *order* of operations: that revoking
+keeps the record and delete removes it, that the audit entry precedes any
+change in both, that deleting closes the sign-in before removing the record,
+that it refuses when it cannot, that a failed delete still leaves access
+withdrawn, that neither runs without someone recorded as responsible, that a
+representative with no account can still be removed, that the email does not
+say why, and that the page gates deletion on typing the word.
+
+Mutation-tested — six, all caught: deleting before closing the sign-in;
+auditing after the change; refusing to refuse when the account cannot be
+closed; dropping the responsible-party requirement; revoke deleting the record;
+and closing the account with a status that does not block sign-in.
+
+That last one survived at first. The check compared the written status to
+`REMOVED_USER_STATUS` — the same constant that produced it — so changing the
+constant to `on_leave` passed while letting the person straight back in. It now
+parses `REVOKED_STATUSES` out of `shared/accountStatus` and asserts membership
+of that. Third time this session a check has agreed with the vocabulary instead
+of the mechanism; the shape of the mistake is always the same, comparing a
+result against the thing that produced it.
