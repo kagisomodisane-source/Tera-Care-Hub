@@ -1,3 +1,102 @@
+## Invoices follow QuickBooks, one way (Base44 checkpoint 6af79bfecfa9d140e8ee61fc)
+
+**New**: `base44/functions/syncInvoicesFromQuickBooks/entry.ts`,
+`src/components/quickbooks/InvoicePullSettings.jsx`,
+`scripts/verify-qb-invoice-sync.mjs`, workflow `QuickBooks Invoice Pull Sync`
+**Changed**: `src/pages/Payroll.jsx`, `package.json`
+
+QuickBooks is where the money is actually reconciled, so it is the source of
+truth for invoice dates, amounts and payments. Every 12 hours (06:37 and 18:37,
+Europe/London) Wellstride is brought into line with it. Nothing travels the
+other way.
+
+### The guarantee is in the code, not in a convention
+
+The access token this uses can write to QuickBooks — it is the same connector
+the push direction uses. So "one way" cannot come from the credentials, and a
+comment saying so is worth nothing. It comes from three things:
+
+- `qbGet` is the only place `fetch` is called, and it pins `method: 'GET'` as a
+  literal. It takes no verb and no path, so there is no argument through which
+  a caller could ask for a write.
+- Only `/query` is addressed. QuickBooks writes go to `/invoice`, `/batch`,
+  `/payment`; none of those strings appear in the file.
+- `npm run verify:qb-invoice-sync` fails the build if any of that stops being
+  true — a write verb, a second `fetch` call site, a write path, a call back
+  into `syncInvoiceToQuickBooks`, or a locally created record.
+
+The suite asserts mechanisms, never vocabulary, and all 32 checks are
+mutation-tested: each violation is injected and the check must go red. Two of
+those mutants earned their place by failing honestly first:
+
+- `lastIndexOf('function qbGet')` also matched `qbGetRenamedAway`, so a `fetch`
+  hidden in a similarly-named helper would have passed. Now pinned to the real
+  signature.
+- The POST mutant was neutralised by `stripComments`: it replaced the first
+  `method: 'GET'`, which lives in the header comment explaining the rule, and
+  stripping then deleted the mutation. The harness now mutates the stripped
+  code, so mutations land on code that runs.
+
+### Three bugs the checks found in the first draft
+
+- **`paid` from a silent zero.** `money()` coerces anything unparseable to 0.
+  `Balance` and `TotalAmt` arrive from QuickBooks as strings, so a missing
+  figure read as 0 — indistinguishable from "balance cleared" — and marked the
+  invoice **paid**. `deriveStatus` now parses strictly, requires a positive
+  total before `paid`, and returns null when QuickBooks has not said enough, in
+  which case the local status is left alone.
+- **Matching that silently stopped working.** The draft listed the 1,000 most
+  recent invoices and matched in memory. Past a thousand invoices the older ones
+  stop being found and come back as `unmatched`, which reads as "raised directly
+  in QuickBooks" and sends somebody hunting a problem that does not exist. It
+  now fetches exactly the ids the run actually pulled, via `$in` in chunks.
+- **A capped query with no cap signal.** One query of 500 dropped its overflow
+  without saying so. It now pages, and reports `capped` when it hits its own
+  ceiling.
+
+Figures QuickBooks does not state are left off the patch entirely rather than
+written as 0 or null, so a thin payload cannot blank a figure that is already
+right. Only QuickBooks-owned fields are touched; `internal_notes`,
+`generated_by`, `is_archived` and the PDF link are never written, so a pull
+cannot undo somebody's work here. Local drafts are skipped — a draft has not
+been issued, and QuickBooks cannot tell us it has.
+
+An invoice raised in QuickBooks for a customer this app cannot identify is
+**reported, not created**: `Invoice` requires a `client_id`, and guessing one
+attaches somebody's money to the wrong service user.
+
+### Verified against the live account
+
+The first run read 19 real invoices from the last 30 days: `capped: false`,
+`incomplete: 0`, `errors: 0`, `updated: 0`, `unmatched: 19`.
+
+Nineteen unmatched is the correct result, not a failure, and it is the thing to
+know about this feature: **no Wellstride invoice carries a `qb_invoice_id`**, so
+there is nothing for the pull to update yet. The link is set when an invoice is
+pushed to QuickBooks by `syncInvoiceToQuickBooks`; from then on the pull keeps
+it in step. The two numbering schemes do not correspond (`1375`–`1393` in
+QuickBooks against `INV-6A05-202607-628` here), so they cannot be matched
+automatically, and guessing is the one thing this function must not do.
+
+### Scheduled runs do authenticate
+
+Worth recording, because it was not obvious and the workflow files pass no
+secret: scheduled workflow invocations carry a privileged identity.
+`reconcileShiftVisits` runs every five minutes through `authorizeBackendJob`,
+which requires a privileged session or the shared secret, and its audit records
+are being written — so `base44.auth.me()` resolves on a scheduled run. That is
+why `authorizeAutomationCall(base44, body, ['admin', 'manager'])` is enough and
+no secret needs committing to the workflow definition.
+
+### The panel says which way it goes
+
+`InvoicePullSettings`, in Payroll → QuickBooks: the enable switch, the lookback
+window, the last run with its counts, and Run now (which passes `manual: true`
+so an admin can try the sync before arming it). The card states the direction
+permanently, because the expensive misunderstanding here is an admin correcting
+an amount in Wellstride and assuming their accountant will see it. They will
+not — the next pull overwrites it.
+
 ## Pages that would not scroll (Base44 checkpoint 6af51d1655f1e562028c88c3)
 
 **New**: `src/components/layout/appScroller.js`, `scripts/verify-app-scroll.mjs`
