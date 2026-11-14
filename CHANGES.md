@@ -1,3 +1,86 @@
+## Where each invoice stands with QuickBooks (Base44 checkpoint 6af7cf62d9fe9dcd459cceea)
+
+**New**: `src/components/quickbooks/qbInvoiceLinks.js`,
+`src/components/quickbooks/QuickBooksInvoiceStatus.jsx`,
+`src/components/quickbooks/PulledFromQuickBooks.jsx`,
+`scripts/verify-qb-invoice-links.mjs`
+**Changed**: `src/pages/Payroll.jsx`, `InvoicePullSettings.jsx`,
+`syncInvoicesFromQuickBooks`, `src/pages/ClientDashboard.jsx`, `package.json`
+
+The invoice list could not answer the question an admin actually has in front of
+it — "is this the figure the accountant has?" — so every invoice in the Payroll
+suite now says where it stands with QuickBooks, and links to both sides.
+
+### On each invoice
+
+`QuickBooksInvoiceStatus` shows **In QuickBooks · #1380** with when it was last
+checked, or **Not in QuickBooks** for one that is Wellstride's alone, plus a
+link that opens the invoice in QuickBooks and a link to the client's record.
+
+The QuickBooks link goes through the login route with `deeplinkcompanyid`, not
+the bare `txnId` form. QuickBooks serves several companies from one host, so a
+bare link opens whichever company the browser is signed in to — for anyone with
+more than one that is the wrong invoice or an error. The pull now records
+`realm_id` on its settings row to make that possible; it is a company
+identifier that appears in QuickBooks' own URLs, not a credential.
+
+### The nineteen that could not be placed
+
+They were a count and a flat list. Now each one shows its doc number, amount,
+date, the customer as QuickBooks states it, a link into QuickBooks, and — where
+it can be worked out — the Wellstride client it appears to belong to, **with the
+reason shown**, as a suggestion. Nothing is written. All ten distinct customers
+on this account resolve:
+
+| How | Example |
+|---|---|
+| client name | `Joanne Clitheroe`, `Mimarcare Ltd` |
+| postcode of a client location | `4 Fir Grove, Sheringham, NR26 8PQ` |
+| postcode plus location name | `1 Forge Close, Pooringland, NR14 7SZ` |
+| location name | `Roy McFruin` |
+| location named inside the customer | `Bridget Waller 9 Ainsworth Road…` |
+
+Every step is an exact match on a normalised value. There is no fuzzy scoring
+and no nearest guess, because what is being linked is somebody's money and a
+plausible-but-wrong match is worse than none. Where several clients fit, the
+answer is "could be more than one", not a coin toss.
+
+### Three things only the real data would have shown
+
+Synthetic fixtures would have passed a worse implementation. The live records
+are messy in ways that matter, and `verify:qb-invoice-links` now encodes them:
+
+- **One postcode, two clients.** NR14 7SZ holds both `1 Forge Close` (Thera) and
+  `Donald Threadgold` (MimarCare). Postcode alone cannot resolve it, so the rest
+  of the customer string is used to narrow it — and when that fails it stays
+  ambiguous.
+- **A shorter duplicate winning on length.** 22 Godfrey Road, 52 Norwich Road
+  and 16 Latimer Road are each recorded twice, under `Mancap` and under
+  `Mencap East Norfolk`. Narrowing by location name handed `22 Godfrey Road,
+  NR10 3NH` to Mancap purely because that record's name is shorter and so
+  happened to be a substring of the customer. A name contained in another
+  candidate's name cannot tell the two apart, so it no longer counts.
+- **Zero candidates reported as "more than one".** A location with no
+  `parent_client_id` produced "postcode covers more than one client" — wrong,
+  and alarming. Nothing to go on and several possibilities are now distinct.
+
+A fourth was my own test being wrong rather than the code: a customer written
+verbatim as one record's location name *should* resolve to it, since an exact
+whole-string match is the most specific evidence there is. That check now
+asserts the real behaviour, and the dangerous case is covered separately.
+
+### Also
+
+- Client links from the dashboard pointed at `ClientProfile?clientId=`, which
+  reads `?id=`. They opened the page with no client. Fixed.
+- `PulledFromQuickBooks` reuses the app's existing `fetchClients` and
+  `fetchClientLocations` under their existing query keys rather than re-reading
+  every client under keys of its own. `audit:query-keys` caught the collision.
+- **Worth a look:** `Mancap` / `Mencap` / `Mencap East Norfolk` hold the same
+  three addresses between them, and `Thera Trust` appears as
+  `Thera East Anglia` on some locations. The denormalised name is ignored in
+  favour of the Client record, but the duplicate clients are real.
+
 ## Invoices follow QuickBooks, one way (Base44 checkpoint 6af79bfecfa9d140e8ee61fc)
 
 **New**: `base44/functions/syncInvoicesFromQuickBooks/entry.ts`,
