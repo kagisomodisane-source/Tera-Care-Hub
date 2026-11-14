@@ -1,3 +1,86 @@
+## Invoices raised in QuickBooks now appear here (Base44 checkpoint 6af8f1b6dc358e342400b731)
+
+**New**: `scripts/sync-qb-matcher.mjs`
+**Changed**: `syncInvoicesFromQuickBooks`, `qbInvoiceLinks.js`,
+`InvoicePullSettings.jsx`, `PulledFromQuickBooks.jsx`,
+`scripts/verify-qb-invoice-sync.mjs`, `scripts/verify-qb-invoice-links.mjs`,
+`package.json`
+
+An invoice raised in QuickBooks is now created in Wellstride as part of the
+12-hourly sync, so the two no longer diverge the moment an invoice is raised on
+the accountant's side.
+
+### Created, but never guessed at
+
+The reason this was previously refused was that `Invoice` requires a
+`client_id`, and an invoice filed against the wrong service user is worse than
+no invoice at all. That has not changed — what changed is that the matcher can
+now answer the question exactly, so creation is fenced to the cases where it
+does:
+
+- Creation happens only when the customer resolves to **exactly one** client.
+- Ambiguous, unrecognised and voided invoices are still reported and left
+  alone, each now with the reason it was skipped.
+- `Client` and `Payment` are never created. A client is a care record, not an
+  accounting one; inventing one from an invoice's customer field would conjure a
+  service user nobody admitted.
+- Every creation writes an `AuditLog` entry naming the match and its basis.
+
+Created invoices are numbered `QB-1380` so they cannot collide with the `INV-`
+sequence and their origin is obvious. Line items carry no `shift_id`, because
+this work did not come from a Wellstride shift and a made-up one would let it
+double-bill against real rostered work.
+
+### One rule, two runtimes, no drift
+
+The sync creates invoices against the client its matcher names, while the screen
+shows the admin the client the *other* copy names. Those two disagreeing would
+file an invoice against a client nobody was shown.
+
+The matcher cannot be imported by both: the frontend and the Deno functions are
+separate bundles, and a `shared/*` module still cannot be published at all. So
+it is duplicated — the same bind, and the same answer, as `dbHelpers`
+duplicating `dbFactory`'s field list — but mechanically:
+
+- the matcher lives between markers in `qbInvoiceLinks.js`;
+- `npm run sync:qb-matcher` copies that block into the function, so the copies
+  are byte-identical **by construction** rather than by transcription;
+- `verify:qb-invoice-links` fails on a single byte of drift, **and** loads the
+  function's copy as a module and puts all ten of the account's real customers
+  through it. Identical text today is no guarantee nobody edited around the
+  markers.
+
+Both halves were checked by breaking them on purpose: weakening
+`MIN_CONTAINED_NAME` in the function's copy turns the suite red and prints the
+command that fixes it.
+
+### The one-way check had to change rather than be deleted
+
+`verify:qb-invoice-sync` asserted that nothing was ever created. That is now
+false by design, and quietly dropping the check would have left the real
+invariant unguarded. It was replaced with four narrower ones: a single
+`Invoice.create` call site, inside the single helper, guarded by a resolved
+match, with `client_id` coming from the matcher and nowhere else — plus mutants
+for each. The QuickBooks-write guarantees are untouched: still no write verb,
+one `fetch`, `/query` only.
+
+Writing them found a hole in my own check: `createFromQuickBooks(db, ...)`
+matches the function's **declaration** as well as its call, and the declaration
+comes first in the file, so the guard check was reading the code before the
+wrong thing and passing a guard that was not there. Pinned to `await`.
+
+### Worth knowing before the next run
+
+Nothing has been created yet; the switch is on and the schedule fires at 06:37.
+All ten distinct QuickBooks customers resolve, so the first run will create an
+invoice for each of the 19 it currently reports as unmatched.
+
+Wellstride already holds its own `INV-` drafts for some of these clients,
+generated from shifts. Those drafts and the incoming `QB-` invoices may cover
+overlapping work, so totals will count both until somebody reconciles them.
+The new **Create invoices raised in QuickBooks** switch in Payroll → QuickBooks
+turns the behaviour off without touching the rest of the sync.
+
 ## Where each invoice stands with QuickBooks (Base44 checkpoint 6af7cf62d9fe9dcd459cceea)
 
 **New**: `src/components/quickbooks/qbInvoiceLinks.js`,
