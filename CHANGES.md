@@ -1,3 +1,85 @@
+## The loading screen on signing in (Base44 checkpoint 6afa20879950a810c14e5e5b)
+
+> The client portal loading screen is not full screen on signing in — make it
+> full screen for all devices.
+
+### What was actually on screen
+
+The loading screen with the pulsating logo was not the thing failing to fill
+the viewport. It was not being rendered at all.
+
+`/ClientPortal` is routed inside `AuthenticatedApp`, which gates every route on
+`useAuth()`. Both of its loading flags start `true`, so signing in is handled
+entirely by the app shell — `ClientPortal` has not mounted yet, and its
+`<LoadingScreen label="Opening your portal…" />` cannot be on screen. What the
+shell showed instead, for the whole of the auth round-trip:
+
+```jsx
+<div className="fixed inset-0 flex items-center justify-center">
+  <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800
+                  rounded-full animate-spin" />
+</div>
+```
+
+A 32px spinner and **no background colour at all**. Nothing was painted, so the
+page showed through and the overlay read as a small spinner floating on a bare
+page rather than as a full screen.
+
+Then, once auth resolved as "not signed in", the shell's `auth_required` branch
+did `return null` — a genuinely blank screen for the length of the redirect. So
+signing in was: bare spinner, blank, portal. Three different things, none of
+them the app loading screen.
+
+I had been told to use the loading screen "when loading app or document". These
+two shell fallbacks were missed, which is exactly where "loading app" happens.
+
+### The fix
+
+All three shell waits now render `LoadingScreen`: the auth gate ("Starting
+Wellstride…"), the sign-in redirect ("Taking you to sign in…") and the route
+Suspense fallback. There is no `animate-spin` left anywhere in `App.jsx`, so a
+wait no longer looks different depending which one you hit.
+
+### Making it unconstrainable, not just correct today
+
+The CSS was innocent here, but only by luck. `position: fixed` resolves against
+the nearest ancestor carrying a transform, filter, backdrop-filter, perspective,
+will-change or contain — not against the viewport. Radix puts a transform on its
+dialog content and on every popper wrapper (which is what put the visit-note
+download menu off the right edge of the screen earlier), and the shell's own
+Suspense fallback carried `backdrop-blur`. `LoadingScreen` is also called from
+`PortalPdfActions`, deep inside a card. Nothing transforms those ancestors
+*today*; one dialog wrapping one of those call sites and the "full screen"
+overlay is the size of a dropdown.
+
+So `LoadingScreen` now renders through `createPortal(screen, document.body)`.
+The viewport is the containing block unconditionally, wherever it is called
+from, and it falls back to rendering in place when there is no DOM.
+
+For "all devices" specifically, it also carries `min-h-[100dvh]` alongside
+`inset-0`. Mobile browsers resolve those insets against a box their dynamic
+toolbars shrink; the dvh floor means the background never leaves an uncovered
+strip. The page sets `viewport-fit=cover`, so it paints under the notch and the
+home indicator rather than leaving white bands there.
+
+### Verification
+
+`verify:portal-access` is 125 checks, six of them new: that the screen portals
+to `document.body`, that it keeps both the inset pin and the dvh floor, that
+each of the three shell waits renders `LoadingScreen`, and that no bare spinner
+returns to the shell.
+
+Mutation-tested — five mutants, all caught, each by the check meant to catch it:
+rendering in place, dropping the dvh floor, reverting the sign-in gate to a
+spinner, reverting the redirect to `return null`, and reverting the Suspense
+fallback. Comments were stripped before matching, since the new comments explain
+the spinner they replaced and would otherwise have satisfied the checks that
+forbid it — the trap from the last entry, avoided this time by habit rather than
+by discovery.
+
+Not verified by signing in as a real representative; still no mailbox for one.
+What is asserted is the mechanism, not the pixels.
+
 ## The care plan opens on its summary too (Base44 checkpoint 6afa0b51b292c409a012289f)
 
 **Changed**: `PortalCarePlan.jsx`, `scripts/verify-portal-access.mjs`
