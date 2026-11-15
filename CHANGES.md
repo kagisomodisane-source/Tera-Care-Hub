@@ -1,3 +1,58 @@
+## Whether notes need approving is now a setting (Base44 checkpoint 6afa007b9dfeac48fed4c309)
+
+**Changed**: `portalAccess.js`, `ExternalAccess.jsx`, `getClientPortalData`,
+`generateVisitNotePdf`, `scripts/verify-portal-access.mjs`
+
+External Access → Settings now carries **How visit notes reach the portal**, a
+single switch for every client and representative:
+
+- **off** (`note_release_mode: 'reviewed'`, the default) — a reviewed note
+  appears by itself. The portal stays current with nobody remembering anything.
+- **on** (`'approved'`) — a reviewed note appears only when the reviewer also
+  ticks "approve for client view". Every note is its own decision.
+
+A manager review is still required either way. The switch only decides whether
+a second, per-note step is needed on top.
+
+### The confirmation is on the loosening, not the tightening
+
+Turning approval **on** restricts what is visible, so it applies immediately.
+Turning it **off** widens what families can see without anybody opening a
+single note, and it does so for every client at once — so that direction asks
+first, and the dialog says what actually changes: reviewing becomes the moment
+of sharing, anything a family should not read has to stay out of the note, and
+already-reviewed notes become visible as far back as the 8-week window reaches.
+
+That asymmetry is the point. A confirmation on both directions trains people to
+dismiss it; a confirmation only where access widens still means something.
+
+### Both halves read the same switch
+
+The portal applies the tick **in the query**, so an unapproved note never
+leaves the server, and `generateVisitNotePdf` reads the same
+`client_portal_defaults` row and applies the same condition. Without that the
+note would be hidden on screen and still fetchable by id — the weaker half
+deciding. Only the literal `'approved'` turns it on in both, so a missing or
+unrecognised value leaves notes flowing, which is the behaviour the portal
+already had.
+
+Saving the per-type defaults also used to write `setting_value: { types }`,
+which would have dropped the new key on the next save. Both savers now merge.
+
+### A check had to be re-pointed again
+
+`the note PDF endpoint no longer gates on the retired tick` failed, and it was
+right to. It asserted that `approved_for_client_view` had gone from the
+endpoint entirely — true while the tick was dead, wrong the moment this page
+could turn it back on. It is replaced by the narrower thing that has to hold
+now: the endpoint applies the tick **exactly when the portal does**, never on
+its own initiative. Three more were added: both read the same settings row and
+agree on the default, the portal applies it in the query, and the switch
+confirms only in the loosening direction.
+
+113/113, with two mutation tests: making the endpoint apply the tick
+unconditionally, and removing the confirmation, each fail the suite.
+
 ## "Unauthorized": the invitation said yes, the sign-in said no (Base44 checkpoint 6af9f09f7c6a78c0f621c976)
 
 **Changed**: `representativeInvites.js`, `ExternalAccess.jsx`,
