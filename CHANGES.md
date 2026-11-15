@@ -1,3 +1,138 @@
+## Four portal fixes, one of them a live outage (Base44 checkpoint 6afa2fc2e00324a6067a14cf)
+
+> 1: in reports remove the green "view" button, 2: in documents only show
+> documents that have been uploaded for the client not reports and visit notes
+> as they are already visible in the portal elsewhere, 3: fix the error in date
+> processing when requesting notes from US format to UK format to align with
+> the app and portal, 4: Fix the pdf preparation/generation failure.
+
+### 4 first, because it was an outage I caused
+
+`generateVisitNotePdf` returned 500 on every call. Not for representatives —
+for everyone, admins included. The failing line was the settings lookup I added
+earlier today when the per-note approval tick became configurable:
+
+```js
+const portalSettings = rows(
+  await serviceDb(base44).AppSettings.filter({ setting_key: 'client_portal_defaults' }, …)
+)[0];
+```
+
+`rows` normalises a filter's answer (`[]` or `{ items: [] }`). Three sibling
+functions define it at module scope. This one never did, and the call sits above
+every access branch, so nothing downstream of it ever ran.
+
+The records had been saying so all along:
+
+```
+onedrive_backup_error: "generateVisitNotePdf call failed (500): rows is not defined"
+pdf_url: null
+```
+
+**130 visit notes** carry that, every `onedrive_last_attempt_at` between 21:34
+and 21:47 tonight — a backlog sweep that hit the broken function 130 times.
+Nothing is permanently stuck: `MAX_BACKUP_ATTEMPTS` is 5 and the worst note is
+at 3. But there is no scheduled workflow for `syncPendingVisitNotesToOneDrive`,
+so the backlog does not clear by itself. Left for the user to decide, since
+re-running it pushes 130 files to their OneDrive.
+
+#### How I nearly missed it, twice
+
+My first read of the file said `rows` was undefined. I then wrote a shell check
+that reported "defines rows ✓" and I believed it over myself. It was matching
+`const rows = Math.ceil(pairs.length / 2)` — a **number**, local to a PDF
+layout method, in a different scope entirely. Every grep for "rows" looked
+satisfied.
+
+That is the same mistake as the comment-stripping one and the
+`createFromQuickBooks` one: matching a name *anywhere in the file* when I meant
+*a binding visible at that call site*. Writing it down has not stopped me doing
+it. What stops it is not grepping for names at all.
+
+### So the check is a real linter now
+
+`scripts/verify-function-scope.mjs` runs ESLint's `no-undef` over all 141
+backend files. Not a check for `rows` — the class: a helper never imported, a
+dropped shared-module URL import, a renamed variable with a surviving
+reference, a typo in a global.
+
+Two functions turned out to be **silently unlintable** — espree cannot parse
+`(s: string) => …`, so `createPolicyFromTemplate` and
+`syncMedicationToMARSchedule` had been skipped entirely. They are transpiled
+through `typescript` first now, which is line-preserving, so reported lines
+still match the file. A parse failure is reported as a failure, not a pass:
+"a file that cannot be parsed is not a file that passed."
+
+Three mutants, all caught at the right line: dropping the `rows` helper gives
+back the exact production error, `isManagerOrAdmin` → `isManagerOrAdmn`, and a
+deleted `serviceDb` import.
+
+Also renamed that local `rows` to `rowCount`, so the shadowing that hid this
+cannot hide it again.
+
+### 1 — the green View on a weekly report
+
+The card had two Views: "View full report", which opens the rest of the report
+in place, and a teal **View** in the header that opened a PDF in another tab.
+Same word, same card, different behaviour. `showView={false}` on the reports
+card; Download stays, because keeping or forwarding a copy is a different job
+from reading it here. The flag gates the button itself — a check fails if it
+becomes a prop nothing reads.
+
+### 2 — Documents is uploads only
+
+`collectFiles` gathered everything openable: care plans, weekly reports, visit
+notes, invoices, the risk assessment, *and* the uploads. Every one of those has
+its own tab with the content on screen rather than only as a PDF, so the tab
+restated the whole portal as a list of downloads and buried the one thing it is
+for. A GP letter sat five taps below a list of the client's own visit notes.
+
+Now it reads `ClientDocument` only. The server already decides which of those a
+given representative may see, so nothing about who-can-read-what moved. Rows
+without a real file URL are dropped rather than shown with a button that cannot
+work.
+
+### 3 — the date was never "processed" wrongly; it was *typed* wrongly
+
+Worth being precise, because the fix is not where the bug sounds like it is.
+Nothing mis-parsed anything. `<input type="date">` is drawn by the **browser**
+in the device's own locale. The app patches `Date.prototype.toLocaleDateString`
+app-wide to force UK output, and the native picker ignores every bit of it. On a
+US-configured iPad that one field read mm/dd/yyyy while every date beside it
+read dd/MM/yyyy — so `09/11` meant two different days on one screen. For a date
+a family member is asking a manager to go and look up, that is the difference
+between two real visits.
+
+`FORMAT_MAP` had been fixing US *output* for a while. Input was the other half
+and was missing. `src/components/utils/ukDates.js` adds `parseUkDate` and
+`formatIsoAsUk`; the request form takes the day as text in UK order, echoes back
+"Asking for Monday 09/11/2026" before anything is sent, and still puts ISO
+`yyyy-MM-dd` on the wire.
+
+`parseUkDate` is strict. `31/02/2026` is refused, not rolled forward to 3 March
+— a silently shifted date would show somebody a day they never asked about.
+
+### Verification
+
+`verify:portal-access` is 149 checks (was 125); `verify:all` and the build are
+green; `verify:function-scope` passes 141 backend files.
+
+The date work is a **behaviour table**, not a source match — 14 cases through
+the real function. The one that matters is `11/09/2026 → 2026-09-11` alongside
+`09/11/2026 → 2026-11-09`: it pins the *order*, so a parser that reads
+month-first fails even though it returns a perfectly valid date. Source greps
+cannot tell those two apart, which is precisely the bug.
+
+Nine mutants across the four fixes, all caught: US-order parsing (8 failures),
+31 February rolling forward, `type="date"` returning, `showView={false}`
+removed, `showView` no longer gating the button, visit notes back in Documents,
+and the three backend-scope ones above.
+
+Not verified by signing in as a representative or by generating a PDF as a real
+user — I cannot invoke an app function as a signed-in user from here. What is
+verified is that the exact production error reproduces on demand and is gone,
+and that the function redeployed and is listening.
+
 ## The loading screen on signing in (Base44 checkpoint 6afa20879950a810c14e5e5b)
 
 > The client portal loading screen is not full screen on signing in — make it
