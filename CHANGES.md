@@ -1,3 +1,69 @@
+## View and Download on every portal document (Base44 checkpoint 6af9e47dcaf731315d3c3f72)
+
+**New**: `src/components/portal/PortalPdfActions.jsx`
+**Removed**: `PortalFileLink.jsx`, `PortalPdfButton.jsx`
+**Changed**: `PortalVisitNotes`, `PortalReports`, `PortalCarePlan`,
+`PortalRiskAssessment`, `PortalInvoices`, `PortalDocuments`,
+`generateVisitNotePdf`, `scripts/verify-portal-access.mjs`
+
+Every document in the portal now has **View** and **Download**, because they
+are different jobs: View opens the file to read on the spot, Download puts a
+copy on the device to keep or forward.
+
+### Download now actually downloads
+
+The old button said "Download PDF" and opened a tab. A cross-origin
+`<a download>` is ignored by every browser — it navigates instead — so the
+bytes are now fetched and saved from a blob with a real filename
+(`visit-note-2026-11-14.pdf`, not a storage id).
+
+Where the bytes cannot be read from the page (storage without permissive CORS,
+or a private-mode quirk) it opens the file and **says so**, rather than
+appearing to do nothing.
+
+### Three panels were silently showing no button at all
+
+`PortalFileLink` rendered `null` for a missing URL, so care plans, risk
+assessments and invoices with no PDF yet showed nothing — indistinguishable
+from a broken page. They now say "No PDF yet".
+
+That state is deliberate rather than lazy: none of those three has a generator
+a representative may call. `generateInvoicePdf` is admin-only,
+`generateCarePlanPdf` takes a care-plan object rather than an id, and
+`generateRiskAssessmentPdf` has no client scoping at all. Wiring a button to
+any of them would either 403 or widen access, so the honest answer is to state
+that the file does not exist. Visit notes and weekly reports **do** have
+callable generators, so theirs are still built on first use — including from
+the Documents tab, which previously dropped them entirely when no PDF existed.
+
+### A regression this caught in the work from an hour earlier
+
+Moving the portal to a rolling window broke the note PDF endpoint without
+touching it. `generateVisitNotePdf` let a representative through only when
+`approved_for_client_view === true` — the per-note tick the portal had just
+stopped reading. Every note the portal now displays would have offered a button
+that returned 403.
+
+The endpoint mirrors the portal's rule again: active, manager-reviewed, and
+inside the same 8-week window or on a day **that same person** asked for and a
+manager approved. Another representative's approved day does not carry over.
+
+Nine checks were added so the pair cannot drift again, including one that reads
+`NOTE_WINDOW_WEEKS` out of both files and fails if the numbers differ, and one
+that fails if `approved_for_client_view` reappears in the endpoint at all.
+99/99.
+
+### Still open, and not quietly fixed
+
+- **`generateWeeklyReportPdf` has no client scoping.** It allows any admin *or
+  staff* — and a representative's platform role is `user`, which satisfies its
+  `isStaff` test — then fetches whatever `report_id` it is given. Any signed-in
+  account can pull any client's weekly report PDF. The portal only ever hands
+  it ids the representative may see, so nothing in the app exercises it, but
+  the endpoint is open. Pre-existing; worth closing.
+- `generateRiskAssessmentPdf` checks only that the caller is signed in.
+- A CQC inspector is still bounded by the 8-week window.
+
 ## The portal shows a rolling 8 weeks, and older days are asked for (Base44 checkpoint 6af923cd8a06d221e7d0ce96)
 
 **New**: `VisitNoteRequest` entity, `src/components/portal/PortalNoteRequest.jsx`,
