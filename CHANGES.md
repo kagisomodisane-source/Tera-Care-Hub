@@ -1,3 +1,68 @@
+## "Unauthorized": the invitation said yes, the sign-in said no (Base44 checkpoint 6af9f09f7c6a78c0f621c976)
+
+**Changed**: `representativeInvites.js`, `ExternalAccess.jsx`,
+`scripts/verify-portal-access.mjs`
+**Data**: `applications@terahealthcare.co.uk` User.status `archived` → `active`
+
+A representative on an iPad got **"The portal could not be loaded —
+Unauthorized"**. The screenshot was the diagnosis: that card is the *data*
+query failing, not sign-in. `auth.me()` had already succeeded in the browser,
+or the page would have shown "Taking you to sign in" instead. So the person was
+signed in and the backend was refusing them.
+
+### Two records, one answer, and they disagreed
+
+Portal access has two halves:
+
+- the **RepresentativeInvitation** — what the External Access screen shows, and
+  the trust root the portal's permission model was deliberately built on;
+- the **User.status** — which `shared/accountStatus` reads, and which makes
+  `authedUser` return null for `inactive` or `archived`, so all 128 backend
+  functions answer 401.
+
+Revoking writes the second. `approveRepresentative` only ever provisioned when
+there was **no** existing user:
+
+```js
+if (!existingUser) { inviteUser(email, 'user'); }
+```
+
+So approving somebody who had previously been revoked marked the invitation
+`accepted` and left their sign-in shut. The invitation said they had access,
+every request said 401, and nothing anywhere said why. That is what had
+happened to `applications@terahealthcare.co.uk`: invitation `accepted`,
+`approved_by_email` set by an admin, `User.status: "archived"`.
+
+The account has been set back to `active`. That restores access an admin had
+already approved; it grants nothing new.
+
+### Three fixes, not one
+
+1. **Approval re-opens the sign-in.** An existing user whose status is one of
+   the revoked ones is set back to `active` before the invitation is marked
+   accepted — in the same place that already refuses to record a grant it could
+   not make.
+2. **The disagreement is visible.** A representative whose sign-in is closed now
+   carries a warning at the top of their card on External Access, naming the
+   status and saying that approving again re-opens it. An admin no longer has to
+   infer a 401 from a screen that says everything is fine.
+3. **The two lists are checked against each other.** A check compares the
+   statuses the frontend writes when revoking against `REVOKED_STATUSES` in
+   `shared/accountStatus`. If either side gains a status the other does not
+   know, the suite fails rather than letting a new way to be silently locked
+   out through.
+
+110/110. The first of those was mutation-tested: disabling the re-open branch
+fails the suite with "approval never checks whether the sign-in was closed by a
+revoke".
+
+### Worth noting
+
+This is the same shape as the bug fixed an hour earlier, where the portal's
+visibility rule and the PDF endpoint's rule drifted apart. Two records that
+must agree, no single place that owns the answer, and nothing checking. Both
+now have a check that fails when they disagree.
+
 ## Two open PDF endpoints, returning to the portal, and one loading screen (Base44 checkpoint 6af9ef1847b54b6f38fc86ca)
 
 **Changed**: `generateWeeklyReportPdf`, `generateRiskAssessmentPdf`,
