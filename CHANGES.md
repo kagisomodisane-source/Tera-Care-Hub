@@ -1,3 +1,44 @@
+## Weekly reports open on the wellbeing summary (Base44 checkpoint 6afa083c6797aff834f62306)
+
+**Changed**: `PortalReports.jsx`, `PortalPdfActions.jsx`,
+`scripts/verify-portal-access.mjs`
+
+A weekly report is eight sections of clinical detail — mood, observations,
+medication, food and drink, mobility, trends, concerns, follow-ups — and the
+tab rendered every section of every week, stacked. Several weeks in and it was
+a wall of text to scroll past before reaching anything.
+
+Each week now opens on **Overall wellbeing**, the part a family reads first,
+with the rest one tap away behind **View full report**. The button says how
+much is waiting — "View full report (6 more sections)" — counting only the
+sections that actually hold something, so an empty week does not offer an
+expander that reveals nothing.
+
+A week with no summary written says so plainly rather than opening blank.
+
+### Two Views on one card
+
+The panel header already carries View and Download for the PDF. Adding a third
+control called "View" would have left a screen reader announcing two
+indistinguishable buttons, so:
+
+- the expander is **"View full report"** / "Hide the full report", with
+  `aria-expanded` and `aria-controls`;
+- the PDF controls keep their visible wording but now announce themselves as
+  "View the weekly report PDF" and "Download the weekly report PDF".
+
+### Checks
+
+116/116. Three added: the summary renders outside the collapsed block while
+every detail field renders inside it; the expander reports its state and names
+what it opens; and the PDF controls name the file they act on.
+
+The first needed `lastIndexOf` rather than `indexOf` — those field names also
+appear in the helper that counts the waiting sections, which sits above the
+gate, so a first-match search would have read the wrong occurrence and passed
+whatever it found. Mutation-tested: forcing the detail block open fails the
+suite with "nothing is collapsed".
+
 ## Cleared the release flags the abandoned run left behind
 
 **Data only** — no code change. 422 `VisitNote.approved_for_client_view` flags
