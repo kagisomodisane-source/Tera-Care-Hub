@@ -1,3 +1,75 @@
+## Two open PDF endpoints, returning to the portal, and one loading screen (Base44 checkpoint 6af9ef1847b54b6f38fc86ca)
+
+**Changed**: `generateWeeklyReportPdf`, `generateRiskAssessmentPdf`,
+`src/pages/ClientPortal.jsx`, `src/components/ui/LoadingScreen.jsx`,
+`PortalPdfActions.jsx`, `scripts/verify-portal-access.mjs`
+
+### The two endpoints are closed
+
+**`generateWeeklyReportPdf`** allowed any admin *or* "staff", where staff meant
+platform role `user` — which every representative also is — and then fetched
+whatever `report_id` it was handed. Any signed-in account could pull any
+client's weekly report. It also trusted `app_role`, a field the subject can set
+on themselves with `auth.updateMe`.
+
+It now requires one of: manager or admin by platform role; a staff member with
+a shift or assignment for that client (`canAccessClient`); or a representative
+with an accepted invitation for that client, for a report a manager has signed
+off — the same status list the portal applies.
+
+**`generateRiskAssessmentPdf`** checked only that the caller was signed in.
+Access is now decided against the client the record itself names, never the
+`client_id` in the body, which the caller controls. The legacy path, which
+renders text supplied by the caller, refuses when no client is named rather
+than rendering for nobody in particular.
+
+### Why returning to the portal needed a restart
+
+`ClientPortal` called `auth.me()` once on mount and, on **any** rejection,
+redirected to sign in:
+
+```js
+base44.auth.me().then(setUser).catch(() => base44.auth.redirectToLogin(...));
+```
+
+A phone that has just woken answers the first request with a network error
+while the session is perfectly good. So returning to the portal either bounced
+the person to a login they did not need, or — when the redirect did not take —
+left them on a skeleton with nothing retrying, because the effect had `[]` deps
+and `user` stayed null. Force-closing the app was the only way out, which is
+exactly what was reported.
+
+The user is now resolved through a query, so it inherits the app's defaults:
+retries, a refetch on mount, and a refetch when the window regains focus.
+Coming back re-checks by itself. Only a 401 or 403 counts as signed out —
+anything else shows a "could not reach Wellstride" notice with a retry, rather
+than a dead screen or a pointless login.
+
+The service worker was ruled out on the way: it already skips `/api/` and
+non-GET requests and only cache-firsts `/assets/` and the shell.
+
+### One loading screen for every wait
+
+The app's pulsating-logo screen now covers the portal opening, the care record
+loading, and a document being prepared or saved — so a wait looks like the same
+deliberate thing each time instead of a different skeleton per screen. It also
+gained an opaque dark-mode background (it flashed white before), a label, a cap
+so the logo cannot overflow a small phone, and it drops the pulse for anyone who
+asked for reduced motion.
+
+### Eight checks, and one of them was wrong first
+
+107/107. The new checks cover both endpoints, the retrying user query, the
+loading screen, and a blanket one that fails if **any** PDF endpoint compares
+`app_role` — the field that is not a permission.
+
+Two were mutation-tested. Putting the `app_role` trust back failed the suite
+immediately. Making the portal redirect on every failure did **not**, because
+the check looked for "401" anywhere in the file and the retry policy a few
+lines above mentions the same codes — the same "matched the vocabulary, not the
+mechanism" mistake this suite has now caught three times. It is pinned to the
+`signedOut` derivation, and both mutants fail.
+
 ## View and Download on every portal document (Base44 checkpoint 6af9e47dcaf731315d3c3f72)
 
 **New**: `src/components/portal/PortalPdfActions.jsx`
