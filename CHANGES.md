@@ -1,3 +1,50 @@
+## The care plan opens on its summary too (Base44 checkpoint 6afa0b51b292c409a012289f)
+
+**Changed**: `PortalCarePlan.jsx`, `scripts/verify-portal-access.mjs`
+
+The same treatment as the weekly reports, in the client portal's care plan tab.
+A plan is **twenty** sections — purpose, needs, goals, preferences, personal
+care, mobility, medication, food and drink, routines, family involvement,
+cultural needs — and every one of them rendered at once, below the goals.
+
+A plan now opens on its **Summary of needs**, with the rest behind
+**View full care plan (14 more sections)**.
+
+### The details that needed deciding
+
+- **Which section leads.** Summary of needs is the plan's answer to "what does
+  this person need". A plan without one leads on its Purpose instead, and a
+  plan with neither says so rather than opening blank.
+- **No repetition.** Whichever section leads is filtered out of the list below
+  it, so it is not read twice.
+- **The goals collapse too.** They are the most eye-catching part of the plan,
+  but they are detail, not summary, so they sit with everything else. The
+  count includes them.
+- **Only populated sections are counted**, so the button never promises
+  fourteen sections and opens onto four.
+
+The expander is "View full care plan", matching the reports: the panel header
+already carries View and Download for the PDF.
+
+### Scope
+
+Only the client portal. `CarePlanManagement` and the care plan on
+`ClientProfile` are untouched — staff reading a plan to work from it want the
+whole thing on screen, which is the opposite of what a family wants on a phone.
+
+I had started extracting the expander into a shared component so the two
+portal tabs could not drift. That was a refactor nobody asked for, and it was
+stopped before it landed; the collapse is written in each tab instead. If a
+third tab wants it, that is the moment to extract it.
+
+119/119, with three checks added: the summary renders outside the collapsed
+block while the sections and goals render inside it, the leading section is
+excluded from the list below, and the expander reports its state and names
+what it opens. The first asserts against the headline render rather than a
+field name in the SECTIONS table, since that table sits above the gate however
+the component is written. Mutation-tested: forcing the block open fails with
+"nothing is collapsed".
+
 ## Weekly reports open on the wellbeing summary (Base44 checkpoint 6afa083c6797aff834f62306)
 
 **Changed**: `PortalReports.jsx`, `PortalPdfActions.jsx`,
