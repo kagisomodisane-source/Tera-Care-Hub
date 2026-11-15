@@ -1,3 +1,99 @@
+## Ran the backfill: it is blocked on deployment, not on code (Base44 checkpoint 6afa36589f334b62e45b9cb0)
+
+> Run it.
+
+Short version: **the backfill did not work, and the PDF fix is not live.** The
+code is correct in source and green in every check, but the deployed copy of
+`generateVisitNotePdf` is still the broken one, and I could not make it deploy
+from here.
+
+### What I did
+
+Created a temporary workflow (`*/5 * * * *`, batches of 20, oldest first,
+since one function run has ~100s and each note means generating a PDF and
+uploading it). Five runs fired: 22:30, 22:35, 22:40 and a manual 22:44, plus
+one more.
+
+### What happened
+
+Nothing was backed up. Every note processed still failed with the same error,
+including notes touched at **22:44:17 — after** I had explicitly redeployed the
+function with the fixed source via
+`POST /coding/redeploy-function/generateVisitNotePdf` (which returned no
+compiler diagnostics, i.e. apparently succeeded):
+
+```
+onedrive_backup_error: "generateVisitNotePdf call failed (500): rows is not defined"
+pdf_url: null
+```
+
+The fixed source contains **no `rows` reference at all** — I removed the helper
+and inlined the normalisation. So the code that ran cannot be my code. Three
+attempts to deploy it (two `edit_file` calls, one explicit redeploy) all left
+production on the old version. Every write this session has reported *"Change
+was committed to git but failed to apply"* followed by the thirteen
+`functions/shared/*` modules being "on hold". I had been reading that as noise
+about the shared modules only. It is not: **nothing in `base44/functions/` has
+been reaching production while those modules are on hold.**
+
+### Three corrections to what I told you earlier
+
+1. **The pending set is 221 notes, not 130.** My 130 was only the notes
+   carrying that one error string. The sweep works oldest-first across all
+   pending, so my first run processed 20 notes that were not in my 130 at all —
+   which is why the count sat at 130 and I briefly thought the run had done
+   nothing.
+2. **I checked the wrong five notes.** I looked at the five newest to see if
+   the run had touched anything. The batch takes the oldest.
+3. **`rows` is not the only failure mode.** The records also carry
+   `(401): Unauthorized`, `(429): Request failed with status code 429`, and a
+   502 from the file-upload integration back in October. The 401 is the one
+   worth attention: the sync invokes the PDF function as the service role and
+   sometimes gets no user session, so some notes will still fail after the
+   deploy is fixed.
+
+### Damage I did, and how to undo it
+
+My five runs burned retry budget against a function that cannot succeed.
+`onedrive_backup_attempts` went from a maximum of 4 before I started to **48
+notes now sitting at the cap of 5**, which the normal sweep skips permanently.
+
+No data repair needed: the app's own **OneDrive visit-note sync panel** already
+has a "retry failed" toggle and runs with `limit: 200`, so it will pick those
+48 up. I deliberately did not write to 48 live care records to reset counters
+when a button already covers it.
+
+I archived the temporary workflow and deleted its file. The admin panel is the
+better tool for this anyway — bigger batch, retry toggle, and it shows you the
+function's actual response, which a workflow run cannot (`output_data` is
+always null, so five runs told me nothing except through their side effects).
+
+### What is actually needed to finish this
+
+1. **Unblock function deploys.** The thirteen `functions/shared/*` modules are
+   "on hold"; while they are, no function reaches production. In the Base44
+   editor, Save & Redeploy on `generateVisitNotePdf` directly, or clear the
+   holds.
+2. **Then publish the app.** Per the redeploy docs, a redeploy fixes
+   automations and workflows immediately but *"the published app keeps running
+   the previous version until you publish the app again"* — so the portal's
+   Download button needs a publish regardless. That also makes the reports,
+   documents and UK-date changes live, which is why I have not published it
+   myself.
+3. **Then run the OneDrive panel** with retry-failed on.
+
+### The code change that did land in source
+
+The settings read is no longer able to throw at all. It sits above every access
+branch, so anything failing there fails every caller — admin, author and
+representative alike. It now normalises both response shapes inline and
+`.catch(() => [])`s, so a settings read that fails leaves the endpoint up
+instead of returning 500 to everyone. That is a better fix than adding back the
+missing helper, and it removes the import that could go missing again.
+
+`verify:all` is green: portal-access 149, function-scope 141 backend files,
+build clean.
+
 ## Four portal fixes, one of them a live outage (Base44 checkpoint 6afa2fc2e00324a6067a14cf)
 
 > 1: in reports remove the green "view" button, 2: in documents only show
