@@ -1,3 +1,40 @@
+## Cleared the release flags the abandoned run left behind
+
+**Data only** — no code change. 422 `VisitNote.approved_for_client_view` flags
+set back to `false`; audit entry `6afa03d5c198da3efb5e5a30`.
+
+The aborted bulk release had set `approved_for_client_view` on every note it
+reached before it timed out. That was harmless while the portal ignored the
+field — but making per-note approval a setting again gave it teeth: switching
+approval **on** would have released all 422 immediately, as if a manager had
+ticked each one.
+
+### Which ones, and how they were told apart
+
+The eight notes managers had genuinely released were captured during the
+original diagnosis, *before* the bulk run touched anything. Everything else
+carrying the flag was the run's doing.
+
+The clear was scoped to exactly what that function selected — `status: active`,
+`manager_reviewed: true`, for the two clients with portal access — minus those
+eight. Running the query with and without those extra conditions returned the
+same 422 rows, which is the check that mattered: no draft, archived or
+unreviewed note was swept up, because the run never touched any.
+
+| | |
+|---|---|
+| Cleared | 422 (421 Joanne Clitheroe, 1 MCCS) |
+| Span | 26 Jul – 14 Nov 2026 |
+| Left alone | the 8 genuine releases, all reviewed by an admin |
+
+Afterwards exactly those eight still carry the flag, matching the pre-release
+baseline row for row.
+
+Nothing visible to a representative changed: the portal shows reviewed notes in
+the rolling 8-week window and does not read this field unless approval is
+switched on. The point was to make sure that switch, when somebody uses it,
+starts from the truth.
+
 ## Whether notes need approving is now a setting (Base44 checkpoint 6afa007b9dfeac48fed4c309)
 
 **Changed**: `portalAccess.js`, `ExternalAccess.jsx`, `getClientPortalData`,
