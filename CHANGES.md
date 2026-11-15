@@ -1,3 +1,82 @@
+## The portal shows a rolling 8 weeks, and older days are asked for (Base44 checkpoint 6af923cd8a06d221e7d0ce96)
+
+**New**: `VisitNoteRequest` entity, `src/components/portal/PortalNoteRequest.jsx`,
+`src/components/visit-notes/PortalNoteRequests.jsx`
+**Changed**: `getClientPortalData`, `PortalVisitNotes.jsx`, `VisitNotes.jsx`,
+`scripts/verify-portal-access.mjs`
+
+### Why the portal was stuck
+
+A note reached a representative only when `approved_for_client_view` was true,
+and that is set in exactly one place — the manager review dialog — where it
+**defaults to unticked**. The managers were doing the work: 480 of Joanne
+Clitheroe's 483 active notes were reviewed. Five were released. The portal was
+not broken; it was showing the five, and had not moved since 13 November.
+
+A gate that has to be remembered on every note will be forgotten.
+
+### What replaces it
+
+A note is visible when it is active, a manager has reviewed it, and its day is
+either inside a rolling **8-week** window or on a day a manager has approved on
+request. The window cannot be forgotten, so the portal keeps itself current.
+
+For anything older, the representative asks for **one specific day** and says
+why; a manager answers in the app. An approved day joins what they can see.
+
+**Approving edits no note.** The decision lives on the request record, so the
+widening is reversible: decline it later and the day closes again, with no
+note quietly rewritten in between. That is also why the earlier attempt at
+this — bulk-setting the flag on the whole backlog — was the wrong shape.
+
+### The guard rails
+
+- `client_id` on a request always comes from the invitation, never the request
+  body, so one representative cannot ask on behalf of another's client.
+- Requests are read back pinned to both the client and the asker.
+- The portal function creates requests as `pending` and can never write
+  `approved`; `VisitNoteRequest` RLS allows update only to manager and admin, so
+  a representative cannot approve their own.
+- A day inside the window is refused — it is already on screen.
+- Ten open requests per person, three years back, one day per request.
+- The manager sees how many reviewed notes that day actually holds *before*
+  answering, and is told when the answer is none.
+
+### The checks had to be re-pointed, not removed
+
+`verify:portal-access` failed on two counts, both correctly:
+`approved_for_client_view: true` was gone from the query, and the visit-note
+limit check was reading the wrong query now that there are two. Deleting either
+would have left the real rule unguarded, so both were rewritten to assert the
+new mechanism, and four more were added: the window is a rolling constant, only
+an approved request widens anything, requests are scoped to the asker, and the
+portal cannot approve its own request. 90/90.
+
+The limit check now finds each query by what it is for rather than by position
+— `indexOf('sr.VisitNote.filter')` picked whichever came first in the file,
+which is how it started reporting a limit of 200 from the approved-day query.
+
+### Left behind by the abandoned backlog release
+
+The earlier bulk release got through roughly 140–300 notes before it timed out,
+setting `approved_for_client_view` on them. Nothing reads that field for portal
+visibility any more, so it grants nothing — but the manager UI still shows a
+"shared" badge from it, which now means nothing. Worth clearing.
+
+That attempt also surfaced a real defect worth recording: **`dbHelpers`'
+automatic audit wrapper cannot write an audit row for a session-less run.** It
+builds the row with a null `user_email` and the server rejects it 422, so every
+audited write from a scheduled function fails. `reconcileShiftVisits` is fine
+only because it writes its own audit rows with `user_email: 'system'`.
+
+### Still open
+
+- A **CQC inspector** is windowed like everyone else; the inspector permission
+  only lifts the manager-review requirement, not the 8 weeks. An inspector
+  probably wants the full history without asking day by day.
+- The portal could not be opened as a representative from here, so the window
+  and the request form want one pass with a real representative sign-in.
+
 ## Invoices raised in QuickBooks now appear here (Base44 checkpoint 6af8f1b6dc358e342400b731)
 
 **New**: `scripts/sync-qb-matcher.mjs`
