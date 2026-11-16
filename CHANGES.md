@@ -1,3 +1,62 @@
+## The risk assessment opens on its risk level (Base44 checkpoint 6afa4f1f66d241276f7142ee)
+
+> In the client portal collapse the risk assessment initially like with the
+> care plan.
+
+Same shape as the weekly reports and the care plan. The panel opens on the
+headline and the detail is one tap away.
+
+### What the headline is
+
+For the reports it is the overall wellbeing summary; for the care plan the
+summary of needs. Here it is the badge row that was already at the top — risk
+level, score out of 100, direction of travel, and the date it was assessed.
+That row is the answer to the question a family actually opens this tab with,
+so it stays visible and nothing needed inventing.
+
+Behind the expander: key concerns, recommended actions, positive indicators.
+The button counts them — "View full assessment (3 more sections)" — so the
+summary cannot be mistaken for the whole record.
+
+The component was restructured into a `RiskPanel` sub-component, matching
+`ReportPanel` and `CarePlanPanel`, and a provably dead `{risk && (...)}` guard
+came out (there is an early return for the no-assessment case directly above
+it). The long comment about `Client.care_plan` / `Client.risk_assessment` being
+deliberately withheld is kept on the default export, where `verify:access-scope`
+expects it.
+
+An assessment with none of the three lists populated says so plainly instead of
+showing an expander onto nothing.
+
+### Verification
+
+`verify:portal-access` is 161 checks (was 155). The six new ones are written as
+a **table over all three collapsing panels** rather than three more one-off
+checks:
+
+```js
+const COLLAPSING_PANELS = [
+  ["PortalReports",        reportsSource,  "View full report"],
+  ["PortalCarePlan",       carePlanSource, "View full care plan"],
+  ["PortalRiskAssessment", riskSource,     "View full assessment"],
+];
+```
+
+Each has to start collapsed (`useState(false)` — the whole of "initially"),
+gate its detail behind `{open && (`, label the control with what it opens, and
+report `aria-expanded`. A fourth panel added later has something to copy, and
+any panel that quietly stops collapsing is caught rather than just the one I
+happened to touch.
+
+Five mutants, all caught by the intended check: opening expanded, ungating the
+detail, dropping the section count, dropping `aria-expanded` — and the same
+first mutation applied to the **care plan**, which the shared check caught too.
+That last one is the point of the table: it proves the check is about the
+behaviour and not about the file I just edited.
+
+`verify:all` and the build are green. This is frontend only, so it ships with
+the next publish; nothing here depends on the blocked function deploys.
+
 ## "No PDF yet" (Base44 checkpoint 6afa4c9402ec5504f7891dab)
 
 > Fix the no PDF yet issue in the client portal.
