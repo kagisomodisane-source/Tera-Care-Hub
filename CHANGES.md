@@ -1,3 +1,64 @@
+## External Access crashed for every manager (Base44 checkpoint 6afa8c1bade6fad6d3436eb3)
+
+> External access page keeps crashing, fix the bug.
+
+### The bug
+
+`ExternalAccess.jsx` rendered `<AlertTriangle />` in two places — the
+closed-account warning on a representative's card (line 158) and the
+note-approval warning dialog (line 1294) — and never imported it. Both were
+mine, from earlier in this work.
+
+The page loaded, then threw `ReferenceError: AlertTriangle is not defined` the
+moment its data arrived and a representative with a closed account was drawn.
+There is one in the live data, so it crashed every time.
+
+It had sat unnoticed since it was written because nothing was published until
+last night. The first publish made it live.
+
+### Why nothing caught it
+
+- `vite build` does not resolve identifiers. An undefined name builds cleanly
+  and throws only when that branch renders.
+- The project's lint config does not enable `no-undef`.
+- Core `no-undef` would not have caught it even if it did: it does not look at
+  JSX element names. `<AlertTriangle />` is invisible to it. That needs
+  `react/jsx-no-undef`. My first sweep used `no-undef` alone, reported nothing,
+  and was wrong.
+
+My guess on reading the report was the card I had added to that page an hour
+earlier. That was wrong too; the card was fine.
+
+### How it was found
+
+No error log exists, and there is no test tooling in the project, so I rendered
+the real page under happy-dom through Vite, seeded with the live invitations
+and settings row, in five scenarios. "Still loading" passed; every scenario
+with data crashed with the same message. After the one-line import fix all five
+render. happy-dom was installed with `--no-save` and removed afterwards.
+
+### The permanent check
+
+`scripts/verify-frontend-scope.mjs` runs `no-undef` and `react/jsx-no-undef`
+over all 747 frontend files and is part of `verify:all`. It is the frontend
+twin of `verify:function-scope`. A file that cannot be parsed is a failure, and
+matching no files is a failure, so it cannot pass by checking nothing.
+
+Two mutants, both caught at the right lines: removing the `AlertTriangle`
+import (the real bug, lines 158 and 1294) and removing a plain function import.
+
+The sweep found no other undefined name anywhere in `src/`.
+
+### Something else the data showed
+
+The stored portal defaults give the **family** type
+`unapproved_visit_notes: true`, so family members see visit notes before a
+manager has reviewed them. The built-in default gives that only to CQC
+inspectors. Not changed — it is a setting on the External Access page and may
+be deliberate — but worth a look.
+
+`verify:all` green; published 2026-11-16T04:52.
+
 ## Four portal features, one that cannot be built here, and a full recheck (Base44 checkpoint 6afa63841e65575dbe9138c6)
 
 > Add 5, 6, 8, 9, 10, then recheck that all integrations and additions hold.
