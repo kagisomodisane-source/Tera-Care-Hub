@@ -1,3 +1,52 @@
+## Client portal: choose which location to view (Base44 checkpoint 6afa969ab7bf97c1b2de9e98)
+
+> Allow a client who has multiple locations to switch/select which they want
+> to view in the client portal.
+
+### What it does
+
+A client with more than one active location now gets a location picker in the
+portal header: "All locations" (the default) plus each location by name.
+Choosing one narrows what the portal shows to that location; the choice is
+remembered on that device. Clients with one location, or none, see no picker.
+
+Narrowed by location: visit notes (including approved earlier days), upcoming
+visits, and the Wellbeing and Medication views, which are built from the notes
+shown. Not narrowed, because those records carry no location in the data
+model: care plans, reports, risk assessment, invoices, documents. A line under
+the header says so whenever a location is chosen.
+
+### How it is kept safe
+
+The location id comes from the browser, so `getClientPortalData` treats it as a
+wish, not an instruction. It reads the locations of the client on the
+representative's own invitation (`ClientLocation.parent_client_id`), and
+honours the requested id only if it is on that list; anything else falls back
+to every location. The filter is added on top of the existing `client_id`
+filter, so it can only ever narrow. The portal is sent five fields per
+location (id, name, type, address, postcode) and nothing else: no access
+instructions, wifi details or safety notes.
+
+### Files
+
+- `base44/functions/getClientPortalData/entry.ts`: `LOCATION_FIELDS`,
+  `locations`, `selectedLocationId`, `atLocation` on both visit-note reads and
+  the shift read; `locations` and `selectedLocationId` in the response.
+- `src/pages/ClientPortal.jsx`: location state, sent as `location_id`, part of
+  the query key, `keepPreviousData` so switching does not flash the loading
+  screen.
+- `src/components/portal/PortalHeader.jsx`: the picker.
+- `scripts/verify-portal-access.mjs`: 5 new checks (183 total), each
+  mutation-tested; 7 mutants, all killed.
+
+### Known limits
+
+- Around 30 older notes (mostly late 2025) for multi-location clients have no
+  location recorded, and one points at a location since deleted. They appear
+  under "All locations" only.
+- Not exercised by a signed-in representative: there is no portal test
+  account. Verified by checks, build, and the published deploy.
+
 ## External Access crashed for every manager (Base44 checkpoint 6afa8c1bade6fad6d3436eb3)
 
 > External access page keeps crashing, fix the bug.
