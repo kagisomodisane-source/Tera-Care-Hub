@@ -1,3 +1,124 @@
+## The invoice panel builds its own PDF, and the portal loses its dead code (Base44 checkpoint 6afa5c878b1ce693bf264524)
+
+> Fix the invoice panel to wire up a generator and clean up the client portal
+> code, remove dead and redundant code.
+
+### Wiring the generator was the easy half
+
+`PortalInvoices` now passes `functionName="generateInvoicePdf"` with
+`payload={{ invoice_id: invoice.id }}`, so an invoice with no stored PDF builds
+one on first use and saves the url onto the record. The "No PDF — ask the
+office for a copy" line is gone, because it can no longer happen.
+
+The hard half was authorisation. `generateInvoicePdf` was admin-only, so wiring
+it naively would have given every representative a button that returns 401 —
+the portal's users are representatives, not admins.
+
+**The permission could not simply be copied.** The portal's tab permission is
+three layers deep — built-in default, per-type default, per-person override —
+and an admin reconfigures it from the External Access page. A copy of that
+chain inside a PDF endpoint is a copy that drifts, and the direction it drifts
+is "serves an invoice to somebody whose access was just revoked".
+
+So the rule stays in one place. `generateInvoicePdf` asks:
+
+```js
+const admin = isAdmin(user);
+let allowed = admin;
+if (!allowed) {
+  const verdict = await base44.functions
+    .invoke('getClientPortalData', { action: 'mayOpenInvoice', invoice_id })
+    .catch(() => null);
+  allowed = verdict?.data?.allowed === true;
+}
+```
+
+and `getClientPortalData` gains a `mayOpenInvoice` action that applies
+`may('invoices')`, refuses previews, and ties the invoice to the client the
+**invitation** names — `invoice.client_id === clientId`, never a `client_id`
+from the request body. It answers a bare boolean: not the invoice, not its
+amount, and no hint about whether the id belongs to another client.
+
+Two details that matter:
+
+- **Plain `functions.invoke`, not `asServiceRole`.** Service role would have the
+  portal judging a privileged ghost instead of the person actually asking, and
+  it would answer yes for anybody. The caller's own session has to travel.
+- **Anything but an explicit yes is a no** — an error, a timeout, a malformed
+  reply all fail closed via `.catch(() => null)`.
+
+Also: the OneDrive auto-upload is now `if (admin)`. A family member tapping
+View on their own invoice should not drop a file into the company's OneDrive as
+a side effect; that backup exists so the office keeps a copy of what the office
+issued.
+
+### Two of my own checks were worthless, and the mutants proved it
+
+Nine mutants. **Seven caught, two survived** — and the two that survived were
+the two that mattered:
+
+- `let allowed = admin` → `let allowed = true`, letting **every signed-in
+  account** fetch any invoice. My check asserted the `invoke(...)` line and the
+  `=== true` line were present. Both still were. It never asserted that
+  permission *starts* from being an admin.
+- deleting `!may('invoices')` from the action, dropping the tab permission
+  entirely. My check tested `/may\('invoices'\)/` against the **whole file** —
+  and the invoices *data* fetch further down calls `may('invoices')` too.
+
+That second one is the same mistake as the `rows` helper, the comment-stripping
+one and `createFromQuickBooks`: matching a name somewhere in a file when I
+meant one call site. The fix is the same discipline — the action's body is now
+sliced out and every assertion runs against that slice only:
+
+```js
+const mayOpenInvoiceBlock = (() => {
+  const start = serverSource.indexOf("body.action === 'mayOpenInvoice'");
+  return start === -1 ? "" : serverSource.slice(start, start + 700);
+})();
+```
+
+Both now fail, along with two more I added afterwards (consulting the portal on
+the wrong branch; the action leaking `invoice_number`).
+
+### The cleanup
+
+Measured rather than guessed — I scanned exports against their uses in `src`
+*and* in `scripts/` before touching anything:
+
+- **`PortalDocuments`** passed `functionName={file.fn}` and
+  `payload={file.payload}`. No row has defined `fn` or `payload` since the tab
+  became uploads-only, so both were dead. Gone, with a note saying why there is
+  deliberately no generator there.
+- **Nine over-exported symbols** made module-private in `portalAccess.js` and
+  `representativeInvites.js` (`FIELD_IDS`, `FROM_NAME`,
+  `PORTAL_INVITE_SUBJECT`, …). All nine are used inside their own file, so they
+  were never dead — just public for no reason.
+- **The eleven exports that looked unused but are not.** `resolvePortalAccess`,
+  `canOpenTab`, `canSeeField`, `BUILT_IN_DEFAULTS` and friends have no caller
+  in `src`, which is exactly how they would look right before being deleted.
+  They are the frontend mirror of the backend rule and `verify:portal-access`
+  imports and exercises them. Left alone. A dead-code sweep that only greps
+  `src/` would have removed the drift protection.
+- **A nine-line comment duplicated verbatim** in `PortalCarePlan` and
+  `PortalRiskAssessment`. Compressed to the operative fact in both; the history
+  ("verify:access-scope was failing on exactly this") is in this changelog
+  already. Checked first that `verify:access-scope` tests withholding
+  *behaviour* and not the comment.
+- **`import React` removed from 17 portal files.** Safe because `jsconfig.json`
+  sets `"jsx": "react-jsx"` and 131 of 400 existing components already omit it.
+  The clean build is the proof, not my opinion.
+
+### Verification
+
+`verify:portal-access` is 167 checks (was 161). `verify:all` and the build are
+green. Published from checkpoint `6afa5c878b1ce693bf264524` at 01:29, because a
+function change reaches a function-to-function caller only after a publish.
+
+Not verified by a representative actually tapping View — still no portal
+account to sign in with. What is verified is that the authorisation cannot be
+removed, loosened, redirected to the service role, or made to fail open without
+a check going red.
+
 ## Retried the capped notes (no code change)
 
 > Run the OneDrive panel retry for the capped notes.
