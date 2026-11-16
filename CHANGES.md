@@ -1,3 +1,107 @@
+## Four portal features, one that cannot be built here, and a full recheck (Base44 checkpoint 6afa63841e65575dbe9138c6)
+
+> Add 5, 6, 8, 9, 10, then recheck that all integrations and additions hold.
+
+Published 2026-11-16T01:59 from commit 1f51d783.
+
+### 5 and 6 — Medication and Wellbeing
+
+Both live inside the Visit Notes tab as a three-way switch: Notes · Wellbeing ·
+Medication. Neither has a permission of its own, deliberately. The server
+builds both from `shownNotes` — the notes this person is actually being sent,
+after the window, the review gate, the approval mode and the note ceiling —
+and from nothing else. Whoever may read the notes may read these; nobody else
+can. The note PDF a representative can already download prints the same
+medication chart, so nothing new is exposed.
+
+The consequence, stated on screen rather than hidden: the charts cover exactly
+the notes in the portal. A representative limited to 20 notes gets trends over
+those 20, not a full eight weeks.
+
+- **Medication**: grouped by day, "Given" / "Not given" in words with an icon
+  (never colour alone), with the carer's reason beside every dose not given.
+- **Wellbeing**: mood by day and fluids recorded by day, one measure and one
+  hue per chart, values in tooltips and in a table underneath. A day with
+  nothing recorded is drawn as a gap, never as a short bar — an absent reading
+  that looks like a bad day would be a lie. Low-mood days are named in words.
+  The fluids chart says it is what carers saw during visits, not a daily total.
+
+### 8 — About me
+
+Families can tell the care team life history, likes, routines, important
+people. New entity `ClientAboutMeEntry`. Every entry is created `pending`, is
+shown to nobody else until a manager approves it, and the form says so.
+Managers answer from a new "From families" card on External Access.
+
+Approving shows the entry in that client's portal. It does **not** edit the care
+plan; the manager's card says to copy anything that belongs there into the plan
+themselves. Auto-merging family text into a clinical document was not something
+to do unasked.
+
+### 9 — Care plan sign-off
+
+"I have read this care plan" on each plan. New entity
+`CarePlanAcknowledgement`: one record per person, plan and **version**, so a new
+version asks again. Asking twice returns the original, so the date on record is
+when they actually confirmed. The wording is deliberate — confirming records
+that they have read it, not that they agree; disagreement goes through
+Feedback. Sign-offs are listed on the same manager card.
+
+### 10 — Faster sign-in: not built, because it cannot be built in the app
+
+Sign-in is entirely Base44's hosted login; the app's only involvement is
+`base44.auth.redirectToLogin(...)`. Magic links, biometrics and "remember this
+device" would have to exist in that hosted flow, and there is no hook for them.
+The one lever available is the app's sign-in methods (Google / Microsoft /
+Apple one-tap), which is an account-level setting affecting every user, so it
+was left for the owner to decide rather than switched on.
+
+### An existing check caught me
+
+The manager's review card reads entities directly, and I first put it in
+`src/components/portal/`. `verify:portal-access` failed at once: "a portal
+screen reads an entity from the browser again". Correct — that folder is the
+representative's surface and everything in it must go through the server
+function. Moved to `src/components/clients/`.
+
+### Verification
+
+`verify:portal-access` is 178 checks (was 167). The wellbeing maths is tested
+by behaviour through the real function, not by source match. Ten mutants, all
+caught: medication from the wider note list, a third note query, an entry
+created already approved, client_id from the request body, other people's
+unread entries returned, confirming another client's plan, an old version's
+confirmation counting for a new one, an empty day scored as zero, fluids
+overwritten instead of added, and the sign-off button showing in a preview.
+
+### The recheck
+
+| What | State |
+| --- | --- |
+| `verify:all` + build | green, all 15 suites |
+| `verify:function-scope` | 141 backend files, every identifier bound |
+| QuickBooks connector | active |
+| OneDrive connector | active |
+| Automatic Visit Completion | active, 9,775 runs, 0 consecutive failures |
+| QuickBooks Roster Auto Sync | active, 2,896 runs, 0 consecutive failures |
+| QuickBooks Invoice Pull Sync | active, last run success |
+| `getClientPortalData` after redeploy | booted and listening, no errors |
+| New entities | both reachable |
+| Visit-note backup backlog | **221 → 0** |
+
+The one note still unsynced is a `resident_note`, which the backup skips by
+design, so the backlog is clear. The temporary catch-up workflow is archived
+and its scheduled check-in cancelled.
+
+**What does not hold, and did not before:** `audit:published` still reports
+three shared modules stale in production — `accessScope` (harmless),
+`automationAuth` (trusts the self-writable `app_role`) and `billingHelpers` (an
+`hourly_rate` of 0 hides a real `pay_rate`). Unchanged by this work and not
+fixable through these tools; see docs/SHARED_MODULE_DEPLOYS.md.
+
+Not verified by a representative using the new screens — still no portal
+account to sign in with.
+
 ## The invoice panel builds its own PDF, and the portal loses its dead code (Base44 checkpoint 6afa5c878b1ce693bf264524)
 
 > Fix the invoice panel to wire up a generator and clean up the client portal
