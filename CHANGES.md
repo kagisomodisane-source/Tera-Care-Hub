@@ -1,3 +1,125 @@
+## "No PDF yet" (Base44 checkpoint 6afa4c9402ec5504f7891dab)
+
+> Fix the no PDF yet issue in the client portal.
+
+Three different things were behind one badge, and one of them was a permanent
+bug rather than missing data.
+
+### What showed it
+
+`PortalPdfActions` renders the missing state when there is no stored url **and**
+no generator wired. Three panels hit it: care plan, risk assessment, invoices.
+Reports and visit notes never did, because they pass a `functionName`.
+
+First I ruled out the cheap explanation: the server's field projections do carry
+`pdf_url` (care plan, risk) and `invoice_pdf_url` (invoices), so nothing was
+being stripped on the way out. The badge was telling the truth.
+
+### 1. The risk assessment could never have a PDF, ever
+
+`generateRiskAssessmentPdf` ended with:
+
+```js
+async uploadPDF(base44, filename) {
+  ...
+  const { file_url } = await base44.asServiceRole.integrations.Core.UploadFile({ file: pdfFile });
+  return file_url;     // and that is all
+}
+```
+
+It uploads the file and returns the url. It never writes it to the record. The
+portal reads the **stored** `pdf_url` off `ClientRiskAssessment` and has nothing
+else to go on, so the panel showed "No PDF yet" on every assessment, for ever,
+however many times anybody pressed generate.
+
+The data says exactly that: **all 30 `ClientRiskAssessment` records have
+`pdf_url: null`**, going back to March. Not one has ever had a url saved. By
+contrast 4 of 15 care plans do have one — because the care-plan generator does
+persist it. That contrast is what made the diagnosis certain rather than likely.
+
+`uploadPDF` now takes the optional entity arguments the visit-note generator
+already had, and the `assessment_id` branch passes
+`'ClientRiskAssessment', assessment_id, 'pdf_url'`. Raced against a timeout for
+the same reason as the visit-note one: an update automation that loops must not
+hold the response.
+
+The stale comment above the access check said *"the portal shows a stored PDF"*
+— describing the intended behaviour while the code never stored one. Corrected
+to say why the branch has to write it.
+
+### 2. Two access holes found on the way
+
+Looking at whether these generators could be wired into the portal at all:
+
+- **`generateStructuredCarePlanPdf`** required only `authedUser`. Any signed-in
+  account — any staff member, any client's representative — could fetch **any**
+  client's care plan as a PDF by knowing a `plan_id`, and the response handed
+  back a public file url. Now `isManagerOrAdmin(user) || canAccessClient(...)`,
+  decided against the client the plan itself names.
+- **`generateInvoicePdf`** gated on
+  `user.role !== 'admin' && user.app_role !== 'admin'`. `app_role` is an
+  ordinary User field the subject can write to themselves with
+  `auth.updateMe` — a lock whose key was in the caller's pocket. Any account
+  could set its own `app_role` to admin and pull any client's invoice. Now
+  `isAdmin(user)`, which goes through `resolveRole` and makes the platform role
+  the ceiling. Still admin-only, as intended.
+
+Neither was what I was asked to look at. Both are the same shape as the
+`automationAuth` hole already on the open list, and they are the reason the
+portal cannot simply be wired to these endpoints.
+
+### 3. The badge itself read as a fault
+
+A bordered grey pill with a crossed-out-file icon, sitting exactly where View
+and Download sit. On the care plan and risk assessment panels the full content
+is already on the page — nothing is missing, and the PDF is only a copy to
+keep. So it now renders as plain muted text, no icon, no border, no button
+shape, and each panel says what is true of it:
+
+- care plan — "Full plan shown on this page"
+- risk assessment — "Full assessment shown on this page"
+- invoices — "No PDF — ask the office for a copy" (here the PDF *is* the bill)
+
+### What this does and does not fix
+
+The wording and the empty state ship with the next publish. The risk-assessment
+url fix and the two access fixes are **in source only**: backend function
+deploys are still not reaching production (see the previous entry), so a
+regenerated risk assessment will not populate `pdf_url` until that is unblocked.
+
+I did not wire the three panels to their generators. That needs a representative
+to be allowed to call them, and the portal's tab permissions are
+admin-configurable through three layers (built-in → per-type defaults →
+per-person override). Replicating that chain inside three PDF endpoints is the
+"one rule, several implementations" trap this codebase keeps falling into, and
+it is not something to write blind while it cannot be deployed or tested. Left
+as a decision for the user.
+
+### Verification
+
+`verify:portal-access` is 155 checks (was 149), six new: that the risk generator
+can persist a url *and* that the `assessment_id` branch actually passes the
+entity (the half that was missing), that the entity and field it writes are the
+ones the portal reads, that each generator decides access against the stored
+record, that no generator reads `user.app_role` directly, that the missing state
+is not a crossed-out-file button, and that each panel's wording matches what is
+true of it. `verify:all` and the build are green.
+
+Six mutants, all caught by the intended check.
+
+**I broke two files during that mutation run.** The restore paths were
+`/tmp/$(basename $f).bak` — and *every* Base44 backend function file is called
+`entry.ts`, so all three backups collided on one path and I restored the risk
+and care-plan functions from the invoice function's backup. Base44 auto-committed
+the result, so `git status` was clean and the working tree looked fine; the suite
+caught it because three checks stayed red after the "restore". Recovered with
+`git show <commit>:<path>` into each file (Base44 blocks `git checkout`), then
+re-verified that each file is its own function before trusting it. Re-ran the
+mutations with the full path flattened under /tmp/mut.
+
+A same-named file in a hundred directories is a trap worth remembering: the
+basename is not an identity.
+
 ## Ran the backfill: it is blocked on deployment, not on code (Base44 checkpoint 6afa36589f334b62e45b9cb0)
 
 > Run it.
