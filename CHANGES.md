@@ -1,3 +1,27 @@
+## Invite email rewritten for the client portal (Base44 checkpoint 6afac70eeb68ce9f219a793b)
+
+> Tailor it for the client portal not overall app.
+
+Base44 sends one invitation email for every new account and gives the template
+nothing that says who the recipient is, so new staff (Staff page,
+QuickBooks sync) get the same email as portal representatives. Chosen wording:
+portal-first, with one line for staff.
+
+- Greeting is "Hello," (the old "Hey {{first_name}}" took the first part of the
+  email address, e.g. "Hey business").
+- Body: Tera Healthcare Ltd has given you access to the client portal; a list
+  of what the portal shows (upcoming visits, visit notes, care plans and risk
+  assessments, reports, documents and invoices), noting it depends on what has
+  been shared; button "Open the client portal"; "Sign in with this email
+  address."; signed Tera Healthcare Ltd.
+- Footer line: "Joining Tera Healthcare as a member of staff? Use the same
+  button to sign in to Wellstride."
+- `{{user_role}}` ("as user") removed.
+
+The subject line stays "You're invited to join Wellstride": the platform does not
+take it from the template for this email. Confirmed with the platform's own
+preview, then published.
+
 ## Invite email now comes from "Tera Healthcare Ltd" (Base44 checkpoint 6afac4286a459f356add7da5)
 
 > Instead of my e-mail address use "Tera Healthcare Ltd" and show me the new version.
