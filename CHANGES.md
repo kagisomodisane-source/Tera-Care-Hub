@@ -1,3 +1,19 @@
+## Invite email now comes from "Tera Healthcare Ltd" (Base44 checkpoint 6afac4286a459f356add7da5)
+
+> Instead of my e-mail address use "Tera Healthcare Ltd" and show me the new version.
+
+The invitation email is one of Base44's built-in emails (sent by
+`base44.users.inviteUser`), and it named whoever sent the invite by their email
+address. The app now has its own copy of that email, `base44/emails/UserInvite.html`,
+created with the platform's "Customize application email" call. The only change
+from Base44's version is that `{{inviting_user}}` is replaced by the fixed text
+"Tera Healthcare Ltd". Everything else, including the button link, is unchanged.
+
+The platform's own preview confirms the new wording, and the app was published.
+To go back to Base44's version, delete the template (id `6afac417b717639e35fae1d1`).
+
+Preview: `docs/email-previews/invite-email.png`.
+
 ## Client portal: choose which location to view (Base44 checkpoint 6afa969ab7bf97c1b2de9e98)
 
 > Allow a client who has multiple locations to switch/select which they want
