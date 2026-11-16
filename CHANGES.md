@@ -1,3 +1,88 @@
+## The outstanding blocker was a missing publish (Base44 checkpoint 6afa4f1f66d241276f7142ee)
+
+> Fix the outstanding.
+
+It was never a deploy blocker. **A function fix does nothing for callers inside
+the published app until the app is published**, and in three sessions I never
+published it.
+
+### The thing I had wrong
+
+`POST /coding/redeploy-function/{name}` says it plainly, and I quoted it myself
+two entries ago without drawing the conclusion:
+
+> The published app keeps running the previous version of the function until you
+> publish the app again. Automations and workflows run the redeployed version
+> right away.
+
+`generateVisitNotePdf` is invoked by `uploadVisitNoteToOneDrive` with
+`base44.asServiceRole.functions.invoke(...)` — a function calling a function,
+which resolves through the published app. So the fix was live for a workflow and
+stale for its actual caller. Five backfill runs kept writing back the **old**
+error, naming an identifier (`rows`) that the fixed source no longer contains
+anywhere. That mismatch was the clue and I misread it as a failed deploy.
+
+What reinforced the misreading: every file write reports
+`functions/shared/<name>: Skipped … on hold`, wrapped in *"Change was committed
+to git but failed to apply"*. That message is about the thirteen held libraries
+and nothing else. It does not mean the function failed to deploy. I had written
+in the previous entry that "nothing in `base44/functions/` is reaching
+production while those holds stand" — **that was wrong**, and the holds are a
+red herring for this class of problem.
+
+Before publishing I ruled the alternatives out properly rather than guessing
+again: walked the whole transitive closure of published modules the PDF function
+imports (`dbHelpers` → `authHelpers` → `accountStatus`, `rateLimit`,
+`accessScope`, `auditTrail`) and grepped every one for an unbound `rows(`.
+Clean. That left the function's own deployed copy, and the only thing never done
+to it was a publish.
+
+### The fix
+
+```
+POST /api/apps/69040627bd655b21c40f3ecd/deploy  { "checkpoint_id": "6afa4f1f66d241276f7142ee" }
+```
+
+Published 2026-11-16T00:41:49 from commit 025b35b4.
+
+**It worked on the first run.** The same catch-up workflow that had moved
+nothing in five attempts drained the backlog from **221 pending to 197** — 24
+visit notes generated and backed up — and kept going. Runs went from 12–17
+seconds of doing nothing to minutes of real work.
+
+This also makes live, at last, everything frontend from this session: the
+full-screen loading screen, the reports and care-plan and risk-assessment
+collapse, Documents showing uploads only, UK-order date entry on note requests,
+and the honest missing-PDF state.
+
+### Written into the doc
+
+`docs/SHARED_MODULE_DEPLOYS.md` gains a section **above** its three blockers,
+because this is what to check first and it is not a `shared/*` problem:
+
+> **source green + redeploy succeeded + production still wrong → publish the
+> app.** Check that before suspecting the holds, the published assets, or the
+> runtime.
+
+With the signature to recognise it by: an error naming an identifier the source
+no longer contains.
+
+### Still true, and still outstanding
+
+- The thirteen `shared/*` modules remain on hold. That is the pre-existing,
+  separately-documented problem (blocker 3: a library deploy does not republish
+  its immutable asset), and it still means `automationAuth` trusts `app_role`
+  and `billingHelpers` hides a real `pay_rate` behind an `hourly_rate` of 0 in
+  production. Unchanged by today, and not fixable through these tools —
+  `audit:published` is the check.
+- 48 notes sit at the retry cap of 5 because my earlier runs burned their budget
+  against the broken function. The OneDrive panel's "retry failed" toggle picks
+  those up.
+- The backlog is still draining on a 5-minute workflow. It needs archiving once
+  clear.
+
+`verify:portal-access` 161/161 and `verify:all` green throughout.
+
 ## The risk assessment opens on its risk level (Base44 checkpoint 6afa4f1f66d241276f7142ee)
 
 > In the client portal collapse the risk assessment initially like with the
