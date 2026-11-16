@@ -1,3 +1,44 @@
+## Retried the capped notes (no code change)
+
+> Run the OneDrive panel retry for the capped notes.
+
+I cannot click the panel, but its "retry failed" toggle only sets
+`retry_failed: true` on `syncPendingVisitNotesToOneDrive` — which the catch-up
+workflow has been passing since the previous entry. So the retry was already
+running; what was missing was throughput and proof it reached the capped notes.
+
+**Capped notes (`onedrive_backup_attempts` at the cap of 5): 29 → 19 → 9 → 4 → 1.**
+Total pending: **221 → 155**.
+
+The remaining one is a single 25 July note and clears on the next scheduled run.
+
+### Why it took interleaving rather than one big run
+
+Two hard limits, both measured rather than assumed:
+
+- **Batch size.** 10 notes take ~82s of a ~100s function budget. The earlier
+  batch of 20 died at 94.9s with
+  `503 DEPLOYMENT_TIMED_OUT — the deployment timed out while responding`. So 10
+  is near the ceiling; 20 is over it.
+- **Cadence.** Raising the schedule to every 2 minutes was refused:
+  `CRON_INTERVAL_TOO_SHORT — its shortest gap between runs is 2 minute(s),
+  below the 5-minute minimum`.
+
+So each run is ~82s inside a 5-minute slot, leaving most of it idle. I fired
+`run-now` into those gaps, which is what moved the capped count down in minutes
+instead of over an hour. The same batch cannot be made bigger or more frequent,
+so interleaving is the only lever.
+
+One thing worth recording: the capped notes looked at first as though they were
+being skipped — their `onedrive_last_attempt_at` was still pre-publish while the
+count fell. They were not being skipped; the sweep works **oldest visit_date
+first**, so the capped notes from 20–23 July went through before the 24–25 July
+ones were touched at all. An untouched timestamp on a record further down a
+queue is not evidence of exclusion.
+
+The 02:09 check-in still stands: confirm the remaining backlog is clear and
+archive the temporary workflow so it stops firing.
+
 ## The outstanding blocker was a missing publish (Base44 checkpoint 6afa4f1f66d241276f7142ee)
 
 > Fix the outstanding.
