@@ -1,3 +1,23 @@
+## Loading screen only for waits over 1.5 seconds (Base44 checkpoint 6afc52decf7cb05eec29bc08)
+
+> Apply the above to waits more than 1.5s.
+
+- `LoadingScreen` (and so `PageLoader` and `LogoLoader`, which render it) shows nothing
+  until the wait has lasted 1.5 seconds (`SHOW_AFTER_MS`), then the full-screen pulsing
+  logo. Quick loads no longer flash it.
+- Chained waits count as one: the app starting, then a page's code, then its data each
+  mount their own screen. The clock starts with the first and keeps running until none
+  has been on screen for 0.4 s, so three 1-second steps show the logo at 1.5 s instead of
+  never.
+- Document tabs in the portal: the tab opens on the plain logo background straight away
+  (it has to exist), and the logo and label appear only after 1.5 seconds.
+- The shift import's inline logo (with its row count) is unchanged.
+
+Verified with a timing test in a simulated browser (short wait never shows; long wait
+shows at 1.5 s; a 1 s + 0.7 s chain shows at 1.5 s total; a fresh wait after a pause starts
+its own clock), 3 new checks in verify:loading-screens (17), all mutants killed;
+verify:all passes; published.
+
 ## Loading screens: full screen, on the logo's own background (Base44 checkpoint 6afc4ef082a0903cc61fecec)
 
 > And make it full screen instead of truncated, make them all full screen.
