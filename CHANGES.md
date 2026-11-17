@@ -1,3 +1,76 @@
+## Medication overdue alerts self-correct; MAR timing trend; person-centred time recommendations (Base44 checkpoint 6afc3f6209bc58953a513fa2)
+
+> The medication overdue alert does not self correct or recheck if medication has
+> been given and log a trend in the MAR chart and care plan recommendations for
+> time adjustment due to service user / resident preference and as part of
+> person centred care.
+
+### Why the alert never cleared (four faults)
+
+1. **Visit-note doses never reached the MAR.** The visit-note form calls
+   `syncMedicationToMARSchedule` with `{ visitNoteId }`; the function only read
+   `data.id` / `event.entity_id`, logged "No visitNoteId found" and returned
+   success. It also refused every carer (managers and the automation only). MCCS's
+   MAR had nothing after 12 November although doses were given every day.
+2. **Late doses never matched.** A dose counted as given only within 2 hours of its
+   slot, so an 08:00 dose given at 10:15 stayed "overdue" all day.
+3. **The background monitor read the MAR only**, rechecked every 5 minutes, and
+   never withdrew an alert once raised.
+4. **Push alerts were never sent**: wrong field names (`recipientEmail`/`body`), 400 every time.
+
+### What changed
+
+- `src/components/medications/medicationTiming.js` (new, plain JS): one rule for
+  which slot a dose belongs to: its `scheduled_time`, else the visit note's
+  "From MAR schedule - HH:MM", else from an hour before the slot up to an hour
+  before the next. Per-dose overdue (`overdueDoses`), 14-day `timingTrend`, and
+  `timingRecommendation`.
+- **Alert monitor** rewritten: reads today's visit notes; checks every minute and
+  whenever the MAR, notes or rota change; one alert per client and dose time; the
+  alert updates as medicines are recorded and is withdrawn when all are, with a
+  "now recorded as given at HH:MM by …" notice. Push payload fixed. "View Client"
+  link fixed (it used a `#/` URL the router ignores).
+- **Dashboard widget** and the **visit-note status badges** use the same matcher;
+  each dose is judged on its own, so a missed 08:00 dose is not hidden once 12:00 falls due.
+- **MAR sync** (`syncMedicationToMARSchedule`): accepts `visitNoteId`; a carer may
+  sync a note for a client they can access (`canAccessClient`); records the slot the
+  carer chose.
+- **Backfill**: MCCS (Roy McFruin) MAR had 30 doses from visit notes 12–17 Nov added
+  (25 morning, 5 Atorvastatin 20:00), each marked `source: visit_note_backfill`.
+  No other client had chart entries in the last 30 days (one 7 Nov note has blank
+  medicine names and was skipped).
+
+### Trend and recommendations (`MedicationTimingReview`)
+
+On the client profile under the MAR chart, and in the care plan viewer:
+- **Dose timing, last 14 days**: per medicine and slot, usually-given time, range,
+  recorded days, and how many raised an overdue alert.
+- **Person-centred timing recommendation** when the record is consistent: at least 5
+  recorded doses, typical shift of at least 30 min, 4 in 5 on the same side, given
+  within 75 min of each other, and never squeezing the gap to another dose below ¾ of
+  the prescribed gap. Rounded to 15 min. Time-critical medicines (Parkinson's,
+  insulin, anticoagulants, anti-epileptics, steroids…) are flagged.
+- Managers can **Review and change time** (needs the person's preference, who the
+  prescriber/pharmacist was and when, and a confirmation). It updates the MAR,
+  keeps a `timing_changes` history on the medicine, and appends a dated line to the
+  active care plan's Medication Management. Or **Keep current time** with a reason,
+  which sets the recommendation aside for 28 days.
+- MCCS today: Finasteride, Memantine, Bisoprolol, Tamsulosin and Omeprazole at 08:00
+  have been given 08:30–09:38 for six days; the recommendation is 09:15. Nothing has
+  been changed; it waits for a manager.
+
+### Verification
+
+`scripts/verify-medication-timing.mjs` (53 checks, in verify:all): behaviour tables
+for slot matching, per-dose overdue, trend and recommendation, plus mechanism checks
+on the monitor, widget, status helper, sync function and review dialog; 16 mutants
+all killed. Review panel, change dialog and widget rendered against MCCS's records
+with no errors. Published.
+
+Not exercised live: a signed-in carer saving a visit note through the fixed sync,
+and the push notification (sendPushNotification still only accepts managers'
+sessions, so carers get in-app alerts only).
+
 ## Dedicated Invoices page (Base44 checkpoint 6afc35bfec84578be23c2b1d)
 
 > Create a dedicated invoice management page, then move all invoice related
