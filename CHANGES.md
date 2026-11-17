@@ -1,3 +1,35 @@
+## Payroll → Invoices tab: overdue invoices shown, real dates, working resend (Base44 checkpoint 6afc30a104d8fd276ca7e09f)
+
+> The invoice management page code is not working or presenting the page.
+
+Rendered the Payroll page (Invoices and Archived tabs) and the QuickBooks
+Invoicing page with records shaped like the live data. Neither page crashed,
+but the Invoices tab was hiding and mislabelling invoices:
+
+- **Overdue invoices were never shown.** The tab listed draft, sent and paid
+  only; 17 live invoices (about £24k outstanding) have status `overdue` and
+  appeared nowhere. They now have their own section at the top, with View,
+  Resend, Mark Paid and Archive.
+- **01-01-1970 dates.** Invoices pulled from QuickBooks have no `sent_date` or
+  `paid_date`, and `format(new Date(null))` printed the epoch. Rows now show the
+  sent/paid date when there is one and the issue date otherwise, labelled.
+  Draft, archived and View-dialog dates use `safeFormat`, so a missing date
+  shows "—" instead of throwing.
+- **"Paid This Month" summed every paid invoice ever.** Relabelled "Paid to
+  Date". The "Sent Invoices" tile is now "Awaiting Payment": sent + overdue,
+  with the outstanding total and the overdue count.
+- **Resend failed silently** on invoices with no client email (every
+  QuickBooks-pulled invoice) and had no error handling. It now says why it
+  cannot send, catches failures, and "Send" on a draft only marks it sent
+  after the email actually goes.
+- **Paid list stopped at 5** with no way to see more: added "Show all".
+
+Files: `src/pages/Payroll.jsx`, `src/components/payroll/PayrollDialogs.jsx`.
+verify:all passes; published.
+
+Not covered: no signed-in browser session was available, so this was
+checked by rendering the page against representative records, not live.
+
 ## Invite email rewritten for the client portal (Base44 checkpoint 6afac70eeb68ce9f219a793b)
 
 > Tailor it for the client portal not overall app.
