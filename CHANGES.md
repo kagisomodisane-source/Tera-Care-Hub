@@ -1,3 +1,39 @@
+## Pulsing logo on every wait (Base44 checkpoint 6afc49802f16400f96ab32a5)
+
+> When waiting for a document to open or load in the client portal, there is no
+> pulsating logo, fix this and apply across the whole app for loading and wait screens.
+
+### The portal
+
+View opens a new tab synchronously (so popup blockers allow it), and that tab sat
+blank and white while the file loaded or was built; the pulsing logo only showed in
+the tab left behind. `PortalPdfActions` now writes a small page with the pulsing logo
+and "Opening / Preparing your document…" into the new tab first, then sends it to the
+file. The browser keeps that page up until the document paints. Applies to care plans,
+risk assessments, reports, invoices and uploaded documents alike.
+
+### Across the app
+
+- `src/components/ui/LogoLoader.jsx` (new): `LogoLoader` (pulsing logo in place, sizes
+  xs–lg, optional label), `PageLoader` (whole page loading), `writeLoadingPage` (new tabs).
+  `LoadingScreen` stays the full-viewport version.
+- 45 pages' loading screens (grey skeleton layouts or "Loading…" text) now show
+  `PageLoader` inside the normal layout, so the menu stays visible.
+- 30 standalone spinners and hand-drawn spinning circles are now the logo.
+- 26 placeholders shown while a tab or panel loads its code are now the logo, sized
+  to the space the panel will take.
+- Left as they are: small spinners inside buttons ("Saving…") and skeleton rows inside
+  widgets on an already-loaded page; those are progress on an action or placeholders
+  for content, not wait screens.
+
+### Verification
+
+`scripts/verify-loading-screens.mjs` (9 checks, in verify:all) reports any standalone
+spinner, spinning circle, skeleton fallback or skeleton page loading screen by file and
+line, and checks the portal tab gets the logo before the wait; mutation-tested. A
+render test confirmed the View tab shows the logo while the PDF is prepared, then
+navigates to it. Build and verify:all pass; published.
+
 ## Medication overdue alerts self-correct; MAR timing trend; person-centred time recommendations (Base44 checkpoint 6afc3f6209bc58953a513fa2)
 
 > The medication overdue alert does not self correct or recheck if medication has
