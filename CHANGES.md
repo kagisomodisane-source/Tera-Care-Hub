@@ -1,3 +1,26 @@
+## Loading screens: full screen, on the logo's own background (Base44 checkpoint 6afc4ef082a0903cc61fecec)
+
+> And make it full screen instead of truncated, make them all full screen.
+
+The screenshot (portal document tab, phone in dark mode) showed the logo as a
+near-white card in the middle of a dark screen. The logo image has its own background
+(sampled: #FEFEFE edge to edge), and the dark-mode background plus the pulse fading it
+made that square stand out as a cut-off box.
+
+- `LoadingScreen`: full viewport, background `#fefefe` in light and dark mode, so the
+  logo blends edge to edge.
+- Document-tab loading page (`writeLoadingPage`): same background, dark override removed.
+- `LogoLoader` and `PageLoader` now render the full-screen `LoadingScreen`: page loads,
+  section and tab loads, list loads. `inline` keeps one in place; only the shift
+  import uses it, because it shows a row count beside the logo.
+- `verify:loading-screens` gains 5 checks (full screen, background, PageLoader/LogoLoader
+  full screen, the one inline exception); the older portal check that required a dark
+  background in dark mode was replaced with the new rule. Mutation-tested; verify:all
+  passes; published.
+
+Preview: `docs/email-previews/loading-screen.png` (phone in dark mode; logo taken from
+the reported screenshot because the image host is not reachable from the build machine).
+
 ## Pulsing logo on every wait (Base44 checkpoint 6afc49802f16400f96ab32a5)
 
 > When waiting for a document to open or load in the client portal, there is no
