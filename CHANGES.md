@@ -1,3 +1,64 @@
+## Dedicated Invoices page (Base44 checkpoint 6afc35bfec84578be23c2b1d)
+
+> Create a dedicated invoice management page, then move all invoice related
+> code and functions into this singular page.
+
+Invoicing was split across three places: the Invoices and Archived tabs plus
+the invoice editor inside Payroll, a separate "QuickBooks Invoicing" page, and
+the QuickBooks invoice-pull settings at the bottom of Payroll's QuickBooks tab.
+It is now one page, **Invoices** (`/Invoices`, in the menu under Finance & Legal).
+
+### The page
+
+- Header actions: Create Manually, Auto-Generate, Batch Monthly.
+- Tiles: Draft Invoices, Awaiting Payment (with overdue count), Paid to Date,
+  Not in QuickBooks.
+- **Invoices** tab: draft, overdue, sent and paid lists with View, Send/Resend,
+  Mark Paid, Edit, Delete and Archive.
+- **QuickBooks** tab: the "Send to QuickBooks" queue with Send all (from the old
+  QuickBooks Invoicing page), and the QuickBooks → Wellstride pull settings.
+- **Archived** tab: archived invoices with Restore.
+
+The old page's "Step 1: generate invoices" called the same `generateMonthlyInvoices`
+function as Batch Monthly, so it is not duplicated; its "Synced to QuickBooks"
+list is replaced by the QuickBooks badge each invoice already shows.
+
+### Where the code went
+
+- `src/pages/Invoices.jsx`: new; all invoice state, queries, mutations,
+  handlers and screens, lifted unchanged from Payroll and QuickBooksInvoicing.
+- `src/components/invoicing/`: now holds every invoice component.
+  `InvoiceDialogs.jsx` is new (Delete, Archive, View and Batch dialogs, split out
+  of `payroll/PayrollDialogs.jsx`); `InvoicePullSettings`, `PulledFromQuickBooks`,
+  `QuickBooksInvoiceStatus` and `qbInvoiceLinks.js` moved here from
+  `components/quickbooks/`. Script paths in `verify-qb-invoice-links.mjs` and
+  `sync-qb-matcher.mjs` updated.
+- `src/pages/Payroll.jsx`: payslips and payroll QuickBooks sync only, with a tile
+  linking to Invoices. `PayrollStatusOverview` drops its invoices step.
+- `src/pages/QuickBooksInvoicing.jsx`: removed. `/QuickBooksInvoicing` redirects
+  to `/Invoices`, so old links still work.
+- Dashboard "Draft Invoices" and "Awaiting Payment" action items now open
+  Invoices.
+
+### Not moved
+
+- **Backend functions** (`generateMonthlyInvoices`, `syncInvoiceToQuickBooks`,
+  `syncInvoicesFromQuickBooks`, `generateInvoicePdf`) stay in `base44/functions/`.
+  Base44 runs each server function from its own folder; a page cannot contain
+  them. The Invoices page is now the only screen that calls them.
+- Dashboard and Reports still read invoices for their totals and charts; they
+  only display figures.
+- The client portal's invoice list is part of the portal, not staff tooling.
+
+### Access
+
+Menu item requires "Create/Edit Invoices" (`financial.create_invoices`); admins
+always see it. The old QuickBooks Invoicing item used "View Financial Reports";
+roles that had only that permission would need "Create/Edit Invoices" added.
+
+Verified: every tab, the editor and the batch/view dialogs rendered against
+invoice records shaped like live data with no errors; verify:all passes; published.
+
 ## Payroll → Invoices tab: overdue invoices shown, real dates, working resend (Base44 checkpoint 6afc30a104d8fd276ca7e09f)
 
 > The invoice management page code is not working or presenting the page.
