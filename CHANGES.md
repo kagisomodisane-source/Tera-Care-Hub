@@ -20,6 +20,9 @@
   from the daily scan. Set to `not_required`; no times, statuses or durations changed. No shift now carries the flag.
 - Expected at the next daily scan: about 10 of them go back into the queue, because their recorded times are still
   wrong (4 clocked in and out seconds apart; 6 with clock-out before clock-in). This is the scan working as designed.
+- Follow-up "Amend like the 49": those 10 amended the same way, using each shift's stored scheduled start/end
+  (BST-correct for the summer dates). AuditLog 6aff2d58984b5d71b7860911 … 091a, linked per shift. 1,695 minutes
+  (28.25 h) now counted: 2 × 12 h MimarCare Ltd (05-11, 08-11), 8 × Joanne Clitheroe visits (30–45 min).
 
 ## Time Correction Queue: code review and fixes (Base44 checkpoint 6aff27f9f8af923bb1d3b9d1)
 
