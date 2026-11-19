@@ -23,6 +23,11 @@
 - Follow-up "Amend like the 49": those 10 amended the same way, using each shift's stored scheduled start/end
   (BST-correct for the summer dates). AuditLog 6aff2d58984b5d71b7860911 … 091a, linked per shift. 1,695 minutes
   (28.25 h) now counted: 2 × 12 h MimarCare Ltd (05-11, 08-11), 8 × Joanne Clitheroe visits (30–45 min).
+- Follow-up "Fix the two" (MimarCare Ltd live-in, 05-11 and 08-11): checked against the visit notes. Both have full-day
+  timed entries (07:45–19:15 and 08:03–19:00), photos of the paper notes taken at 18:58 / 19:22, and manager review
+  on 09-11. The carer clocked in only when writing up at 20:28 / 21:25. The 12 h stand; the records were corrected:
+  anomaly `forgotten_clock_out` → `implausible_duration` (late clock-in), review reason and override reason now state
+  what happened and cite the evidence; both AuditLog reasons updated to match.
 
 ## Time Correction Queue: code review and fixes (Base44 checkpoint 6aff27f9f8af923bb1d3b9d1)
 
