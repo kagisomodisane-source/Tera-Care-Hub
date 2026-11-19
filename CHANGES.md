@@ -1,3 +1,24 @@
+## Time Correction Queue cleared: 49 shifts amended to scheduled times (Base44 checkpoint 6aff2c6cb39f5c28fdd29797)
+
+> Clear the 49 shift → "Amend all to scheduled"
+
+### Data change (19-11-2026)
+- All 49 `needs_review` shifts set to their scheduled start/end: `status: completed`, `time_review_status: amended`,
+  actual/corrected/manager-override times = scheduled, durations recalculated. 5,433 minutes (90.5 h) now counted.
+- Original captured clock times are kept untouched in `original_actual_clock_in/out`.
+- One AuditLog entry per shift (`action: time_correction_amend`, before/after times), linked from each shift's
+  `correction_audit_log_id` (6aff2b45660ab5aa5b9ab4b4 … 4e4). Reviewer recorded as "Bulk review (app owner request)".
+- Queue (`status: needs_review`) and the sidebar badge are now 0.
+
+### Code fix found while clearing
+- `runSystemDiagnostics`: the daily scan re-flagged short visits a manager had already **approved** (or amended/voided),
+  putting them back in the queue every day. It now skips shifts whose review is decided.
+- `verify-time-corrections` gains a check for this (16 checks; fails on the old code).
+
+### Noted, not changed
+- 77 older shifts are `completed` but still carry a stale `time_review_status: needs_review` flag. Nothing in the
+  queue or badge reads it, but it stops the daily scan from re-checking them.
+
 ## Time Correction Queue: code review and fixes (Base44 checkpoint 6aff27f9f8af923bb1d3b9d1)
 
 > Check the time correction queue for errors in code.
