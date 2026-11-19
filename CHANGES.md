@@ -15,9 +15,11 @@
   putting them back in the queue every day. It now skips shifts whose review is decided.
 - `verify-time-corrections` gains a check for this (16 checks; fails on the old code).
 
-### Noted, not changed
-- 77 older shifts are `completed` but still carry a stale `time_review_status: needs_review` flag. Nothing in the
-  queue or badge reads it, but it stops the daily scan from re-checking them.
+### Stale review flags cleared (follow-up: "Clear the flag")
+- 77 older shifts were `completed` (1 `accepted`) but still carried `time_review_status: needs_review`, which hid them
+  from the daily scan. Set to `not_required`; no times, statuses or durations changed. No shift now carries the flag.
+- Expected at the next daily scan: about 10 of them go back into the queue, because their recorded times are still
+  wrong (4 clocked in and out seconds apart; 6 with clock-out before clock-in). This is the scan working as designed.
 
 ## Time Correction Queue: code review and fixes (Base44 checkpoint 6aff27f9f8af923bb1d3b9d1)
 
