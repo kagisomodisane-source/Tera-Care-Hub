@@ -1,3 +1,29 @@
+## Mobile dropdowns crashed inside dialogs: now use the phone's native picker (Base44 checkpoint 6aff6d4e7ff7736d606d1ea8)
+
+> There is a bug on this mobile page where drop downs crash (Edit Shift: Visit Type, Status)
+
+### Cause
+- On phones every `Select` rendered `DropdownDialog`, which opened a vaul bottom-sheet **Drawer**. Most dropdowns sit
+  inside a Radix **Dialog** (Edit Shift, visit notes…), so each tap stacked a second modal layer on the first.
+- On iOS/Safari vaul pins `<body>` with `position: fixed`, locks scroll and restores the scroll position on close, while
+  the dialog runs its own scroll lock and focus trap. The two layers fight, so the dropdown froze, jumped, or took the dialog
+  down with it. This code path only runs on Safari/iOS, which is why it showed on the phone and not on desktop.
+
+### Fix
+- `src/components/ui/DropdownDialog.jsx`: same API, now a styled **native `<select>`**. It opens the system picker above
+  everything, with no extra layer and no body pinning. JSX labels are reduced to text, disabled options stay disabled,
+  an unset value shows the placeholder (which can never be emitted as a value), and 16px text stops iOS zooming on tap.
+- `src/components/ui/select.jsx` (mobile branch): passes `disabled` through, and empty-value options round-trip as `""`
+  so an "All…" / "None" option shows as selected.
+- Applies to every dropdown in the app on phones (all `Select`/`MobileSelect` uses). Desktop is unchanged (Radix popover).
+
+### Verification
+- Harness built from the real `Dialog` + `MobileSelect` + `Select`, run under an iPhone Safari user agent: 15/15
+  (both dropdowns change and save with the dialog staying open, repeated changes, JSX labels, disabled option,
+  placeholder, empty-value option, no errors, body never pinned).
+- New `scripts/verify-mobile-dropdowns.mjs` (9 checks, in `verify:all`); it fails 7/9 on the old drawer code.
+- `verify:all` and the production build pass.
+
 ## Time Correction Queue cleared: 49 shifts amended to scheduled times (Base44 checkpoint 6aff2c6cb39f5c28fdd29797)
 
 > Clear the 49 shift → "Amend all to scheduled"
