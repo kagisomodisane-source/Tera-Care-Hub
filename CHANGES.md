@@ -1,3 +1,13 @@
+## Joy Mdlalose: past shifts marked completed (data, 19-11-2026)
+
+> mark all Joy's past shifts as completed
+
+- Joy = user snehdlamini91@gmail.com (some shifts show her as "Sneh Dlamini"). Of her shifts ending before now, only
+  2 were not completed: MimarCare Ltd / Bridget Waller, 10-11 and 12-11-2026, stuck `in_progress` with no clock-in.
+  Both set to `completed` (status only). Future shifts (20-11 onwards, `accepted`) untouched.
+- Noted, not changed: 10-11 to 19-11 (10 live-in shifts, 07:00-19:00) are now all `completed` but have **no clock
+  times, 0 duration and no visit note**, so they count 0 hours. The last visit note for this location is 09-11.
+
 ## Mobile dropdowns crashed inside dialogs: now use the phone's native picker (Base44 checkpoint 6aff6d4e7ff7736d606d1ea8)
 
 > There is a bug on this mobile page where drop downs crash (Edit Shift: Visit Type, Status)
