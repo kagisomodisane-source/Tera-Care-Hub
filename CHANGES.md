@@ -1,3 +1,57 @@
+## Time Correction Queue: code review and fixes (Base44 checkpoint 6aff27f9f8af923bb1d3b9d1)
+
+> Check the time correction queue for errors in code.
+
+### Errors found and fixed
+
+1. **Clock-out written before the clock-in** (`clockShift`). The forgotten-clock-out cap
+   (scheduled end + 30 min) was applied even when the carer clocked in after that time.
+   Live case in the queue: Joanne Clitheroe, 18 Nov, clocked in 15:08:32, out 15:08:44,
+   "capped" to 08:15 the same morning, duration 0. A clock-in after the window is now never
+   capped: the captured times are kept and it goes to review as `implausible_duration`
+   ("Check the right visit was clocked").
+2. **Cap stretched short overruns** (`clockShift`). A clock-out over 2x the scheduled time
+   but before the cap was moved *later* to the cap (e.g. captured 15:25, recorded 15:30),
+   adding unworked minutes. The cap now only ever shortens.
+3. **Reviewing an already-reviewed shift** (`reviewTimeCorrection`). No status check: a second
+   manager or a stale screen could void an approved visit, or approve twice. Now 409 unless
+   the shift is still `needs_review`; the page refreshes the queue.
+4. **Approve accepted impossible times.** Approve now refuses a missing clock-out or one at/before
+   the clock-in ("Use Amend"); the page flags such cards in red and disables Approve.
+5. **Amend accepted a future clock-out** or any length. Now refused beyond 5 minutes in the
+   future or over 24 hours.
+6. **Audit failure after the update returned 500**, so managers repeated a review already
+   applied. Now a success with a warning.
+7. **Error messages lost on the page**: every refusal showed "Request failed with status code
+   400". The page now shows the server's message.
+8. Dates now use the app format (dd-MM-yyyy HH:mm); original captured clock-in shown when it
+   differs.
+
+### Data found (not changed)
+
+Of 580 shifts with a captured original clock-out (all read):
+- 8 have the clock-out before the clock-in from fault 1: 3 still in the queue (now flagged,
+  Approve disabled), 5 already completed with near-zero or zero hours (MimarCare Ltd 5 and
+  8 Nov; Joanne Clitheroe 2 Sep, 23 Sep, 18 Oct) and one record with a year-0001 date
+  (MimarCare Ltd, 9 Jul).
+- 11 have a recorded clock-out later than the captured one; several are deliberate manager
+  amendments, some match fault 2 (e.g. Joanne Clitheroe 7 Oct, 27 Sep, 2 Aug).
+These affect paid/billed hours and are left for a manager to amend.
+
+The queue holds 49 shifts (mostly Nov 2025 to Jan 2026 seconds-long clock-ins); its 100-row
+limit hides none.
+
+Not a fault: `reconcileShiftVisits` auto-completes forgotten clock-outs at the scheduled end when
+the visit note is complete, recorded as "amended" without a reviewer. Deliberate, and it only
+runs when the clock-in was before the scheduled end.
+
+### Verification
+
+`scripts/verify-time-corrections.mjs` (15 checks, in verify:all). Its behaviour table runs
+clockShift's own classification code: against the old code it reproduces both cap faults
+(08:15 before 15:08; 08:00 stretched to 08:15); every review and page guard fails against the
+old files. verify:all passes; published.
+
 ## Loading screen only for waits over 1.5 seconds (Base44 checkpoint 6afc52decf7cb05eec29bc08)
 
 > Apply the above to waits more than 1.5s.
