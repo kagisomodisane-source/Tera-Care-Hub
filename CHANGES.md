@@ -1,3 +1,39 @@
+## Company details in Settings; invoice PDF rebuilt with them and the payment position (Base44 checkpoint 6aff8959ba98674539628d15)
+
+> allow for company details to be inputed by admin as Wellstride is a management app not the actual company in the settings then carry on with 4
+
+### Settings › Company (admin only, new tab)
+- `components/settings/CompanyDetailsSettings.jsx`: legal name, company number, registered address, phone, accounts email,
+  website, CQC provider ID, invoice logo upload, VAT (registered + number, or exemption wording), bank details
+  (bank, account name, sort code, account number), payment instructions, invoice terms.
+- Stored in one AppSettings row `company_profile` (category `client_billing`, **is_sensitive: true**, so only admins and
+  managers can read it, because it holds bank details). `components/settings/companyProfile.js` tidies input (postcode,
+  sort code, account number, VAT number) and validates it; Save is blocked while anything is wrong, with the error
+  beside the field. Half-filled bank details are refused, so a pay box can't print incomplete.
+
+### Invoice PDF (`functions/generateInvoicePdf`)
+- No longer branded "Wellstride - Excellence in Care". The header shows the company name, address and contacts, plus logo.
+  If no details are saved it prints "Company details not set · Add them in Settings › Company".
+- Bill to: adds the billing contact (FAO), the client's address and postcode, and email.
+- **Section 4:** Amount paid and Balance due under the Total; **PAID** (green) or **OVERDUE** (red) stamp; status line
+  "Due in N days" / "Due today" / "N days overdue" / "Paid on <date>"; **QuickBooks ref** when the invoice is in QuickBooks.
+- VAT: shows the VAT line when registered (or tax charged), otherwise "VAT Exempt" plus the exemption wording.
+- "How to pay" box (bank details, payment reference = invoice number). Hidden once paid.
+- Notes and Terms; footer on every page with the registration line (company no., VAT no., CQC ID) and "Page X of Y".
+- Fixes: long descriptions now wrap (they were cut to one line); the table header repeats on new pages; lines are sorted by
+  date; logo compressed (2.3 MB to about 270 KB per PDF); safe file name when the client name has symbols.
+
+### One PDF everywhere
+- The Invoices page made its own HTML page on create (not a PDF, no company details). It now calls generateInvoicePdf.
+- View invoice › Download PDF and the client portal always build a fresh PDF, so it reflects payments, the stamp and the
+  current company details (a saved copy would go stale).
+
+### Verification
+- Rendered with the function's own template and jsPDF 2.5.1 (the version it uses): part-paid 2-page, overdue, paid, and
+  no-company cases checked visually (previews in `docs/invoice-previews/`).
+- Settings form on the real component: 10/10 (validation blocks save, errors shown, values tidied, saved sensitive).
+- New `verify-company-profile` (34 checks, including the PDF's payment-position logic on 9 cases). `verify:all` and the build pass.
+
 ## Invoices › Archived: delete one or all archived invoices (Base44 checkpoint 6aff7ae80bba2f8a072b919e)
 
 > allow in archived invoices also
