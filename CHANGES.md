@@ -1,3 +1,19 @@
+## Invoices › Archived: delete one or all archived invoices (Base44 checkpoint 6aff7ae80bba2f8a072b919e)
+
+> allow in archived invoices also
+
+- Each archived invoice now has a **delete** button (bin icon) beside View and Restore. It uses the delete
+  confirmation, which no longer offers "Archive Instead" for an invoice that is already archived.
+- New **Delete all** in the Archived header: confirmation lists every archived invoice with the total, then deletes
+  them one by one; any that fail are named, the rest still go. Non-archived invoices are never touched.
+- Archived invoices can be in QuickBooks. Deleting one here does not delete it in QuickBooks, and the QuickBooks pull
+  (matched on `qb_invoice_id`) brings it back if it is changed in QuickBooks later. Both confirmations now say so
+  for QuickBooks-linked invoices.
+- Verified on the real Invoices page with a mock store: 15/15 (row delete + confirm, no Archive Instead, QuickBooks
+  warning only where linked, Cancel deletes nothing, Delete all total £235.00, partial failure named, other invoices
+  untouched). `verify-invoice-queue-clear` now 13 checks (the 4 new ones fail on the previous code). `verify:all`
+  and build pass.
+
 ## Invoices › QuickBooks: delete or clear invoices in "Send to QuickBooks" (Base44 checkpoint 6aff76559967905ccc66c5be)
 
 > allow me to clear/delete invoices in the send to quickbooks page
