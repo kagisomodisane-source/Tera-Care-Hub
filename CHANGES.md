@@ -1,3 +1,22 @@
+## Invoices › QuickBooks: delete or clear invoices in "Send to QuickBooks" (Base44 checkpoint 6aff76559967905ccc66c5be)
+
+> allow me to clear/delete invoices in the send to quickbooks page
+
+- Each waiting invoice now has a **delete** button (bin icon). It opens the existing confirmation, which also offers
+  "Archive instead".
+- New **Clear all** button opens a confirmation listing every waiting invoice with the total, and offers:
+  - **Archive all**: moves them to the Archived tab with reason "Cleared from the Send to QuickBooks queue"; restorable.
+  - **Delete all**: removes them permanently; their visits can then be invoiced again.
+- Only invoices not yet in QuickBooks are in the queue, so neither action touches QuickBooks or a synced invoice.
+  Invoices are handled one at a time; any that fail are named in the message, and the rest still go.
+- Delete/archive errors (e.g. no permission: only admins and managers can delete invoices) now show a message
+  instead of failing silently.
+- Files: `components/invoicing/InvoiceSyncRow.jsx`, `components/invoicing/InvoiceDialogs.jsx` (`ClearSyncQueueDialog`),
+  `pages/Invoices.jsx`.
+- Verified on the real Invoices page with a mock store: 15/15 (single delete with confirmation; Clear all total;
+  archive all then restore; delete all with one failure reported by number; synced invoice never touched; no errors).
+  New `verify-invoice-queue-clear` (9 checks, fails 8/9 on the old code). `verify:all` and the build pass.
+
 ## Joy Mdlalose: past shifts marked completed (data, 19-11-2026)
 
 > mark all Joy's past shifts as completed
