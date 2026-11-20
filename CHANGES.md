@@ -1,3 +1,30 @@
+## Shift Swaps: carers could not offer upcoming shifts; clash check blind to current rotas (Base44 checkpoint 6affdb730479acc9969fe25d)
+
+> check the shift swap page
+
+Found (there are 0 swap requests on record, which fits):
+- **"Offer Shift" missed upcoming shifts.** It read the carer's own shifts oldest-first, capped at 500, then kept
+  future ones. One long-serving carer has 500+ shifts whose oldest 500 end at 28-08-2026, so none of their upcoming
+  shifts could be offered. It now reads `assigned_to = me AND shift_date >= today` directly.
+- **Manager clash / hours check was blind.** Approving or selecting staff validated against the 1,000 oldest shifts
+  in the system, which end at 14-05-2026, so double-bookings and weekly-hours breaches on current rotas were never
+  caught. It now reads every shift from 8 days back onwards (covers the Monday-start week and overnights); about
+  160 rows today.
+- **Same blind spot on the server** (`expressShiftSwapInterest`): a carer's "I can cover" clash check read their
+  oldest 500 shifts. It now reads their shifts in a window around the shift being covered (±8 days).
+- **Error messages:** failures from the backend showed "Request failed with status code 400" instead of the reason
+  ("You already have an overlapping shift at this time"). They now show the reason.
+- **Approval:** a failed notification or email after the shift had already been reassigned was reported as
+  "Selected staff cannot take this shift". Notifications and email are now best-effort (`Promise.allSettled`); the
+  swap reports success, plus a warning if a message could not be sent.
+- Reject / cancel / delete failed silently; they now show an error.
+- "Already interested" check ignores email case; the page header is readable in dark mode.
+
+Noted, not changed: the admin "New Swap" dialog needs a raw Shift ID typed in, and setting a swap to "completed"
+there does not reassign the shift (only the Approve button does).
+
+New guard `scripts/verify-shift-swaps.mjs` (9 checks) in `verify:all`. verify:all and the build pass.
+
 ## Chat: glass conversation header (Base44 checkpoint 6affda28d18bad1f52c73dc9)
 
 > make the chat header glass too
