@@ -1,3 +1,33 @@
+## Badge counts and notifications back in sync (Base44 checkpoint 6affeaf749f7282ba052856d)
+
+> some of the badge counts and notifications are out of sync check the code
+
+Checked every badge against the page it points to, on live data:
+- Tasks 11 = 11;
+- Forms 13 = 13;
+- Visit Notes 2 = 2;
+- leave, timesheets, compliance, payslip adjustments, shift bids / declines / time corrections: all 0 = 0.
+
+What was out of sync:
+1. **Notifications (bell, Dashboard tab, menu bubble, app icon).** The badge counted every unread notification. The
+   page loaded the newest 100 and then hid archived ones. On the owner account (500+ notifications), 93 of the newest
+   100 were archived, so the page showed 7 (all read) while the badge counted 15 unread from 13–19-08-2026 that could
+   never be seen or cleared. Both now use one module, `src/components/notifications/myNotifications.js`:
+   - **the badge** counts every unread notification;
+   - **the page** shows every unread notification plus the newest 100 that are not archived (archived ones are
+     dropped before the limit).
+   So anything counted is on the page, and "Mark all as read" reaches all of them.
+2. **Team notifications** (addressed to "admin" / "manager", not a person) were in neither the badge nor the page.
+   Managers and admins now see those still needing action (unread, not actioned): 1 today, a time-off request.
+3. **Stale badges.** Live refresh covered only shifts, notifications, visit notes and leave. It now also covers
+   tasks, form submissions, timesheets, compliance documents, payslip adjustments and training. New chat messages
+   now refresh the unread-chat badge; it used to change only when a chat was opened. Badges also refresh when you
+   return to the app and every 90 s (paused in the background). Any successful action in the app refreshes them
+   (debounced, `MutationCache` in `query-client.js`). Notification page actions refresh them immediately.
+
+New guard `scripts/verify-badge-sync.mjs` (14 checks, in `verify:all`), including a behaviour test of an account
+shaped like the one that drifted. verify:all and the build pass.
+
 ## Shift Swaps: compact page title that scrolls away (Base44 checkpoint 6affdcea56af374444e3d795)
 
 > fix the top header (Shift Swaps page header)
