@@ -1,3 +1,26 @@
+## Visit Note editor: Cancel / Save / Submit in the glass bottom bar (Base44 checkpoint 6affd68f05822fb5d258603b)
+
+> for the visit notes page use the cancel, save and submit note in the new bottom stack to replace the standard configuration but retain the menu bubble also
+
+- New `GlassActionBar` (`src/components/layout/GlassActionBar.jsx`): the same floating clear-glass pill as the tab
+  bar, carrying a screen's own actions instead of the four tabs, with the menu bubble kept on the right. The Visit
+  Note editor (`CreateEditVisitNote.jsx`) now uses it for Cancel (text), Save (frosted pill, when drafts are
+  allowed) and Submit / Update Note / Save Offline (filled indigo→purple pill). The handlers, disabled states and
+  labels are the same as before. The old solid white bar is removed.
+- Shared pieces moved to `src/components/layout/glassBar.jsx`, used by both bars so they cannot drift:
+  - the glass style;
+  - the `MenuBubble`;
+  - `usePublishBarHeight`, which publishes `--bottom-tabs-h` and the header menu hand-off;
+  - `BottomBarContext`, which `BottomTabsContainer` provides with the menu toggle and alert count, so any page can
+    show the bubble. Context reaches through the portal.
+- The bar also shows on desktop (beside the sidebar, no bubble), because it is the only way to save there. The page
+  bottom padding now follows the bar's real height. On phones under 400px the two small icons drop, so
+  "Submit Note" fits in full at 360px; checked with no truncation at 360 / 390 / 430px, light and dark.
+  Preview: `docs/mobile-previews/visit-note-glass-actions.png`.
+- If the bubble is not available (outside the staff shell), the header keeps its menu button.
+- `verify-shell-layout` is now 30 checks (bar has the three actions, no old fixed bar, content ends above the bar,
+  bubble kept, shared glass, menu context). verify:all and the build pass.
+
 ## Scan after the layout changes: fixes + layout guard (Base44 checkpoint 6affd2f1586060fce64e8f48)
 
 > run a scan to make sure all the new adjustments have taken and scan for bugs
