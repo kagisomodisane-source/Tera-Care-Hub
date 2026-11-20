@@ -1,3 +1,20 @@
+## Floating glass bottom navigation with a separate menu bubble (Base44 checkpoint 6affc19ebe0debb69eeb9200)
+
+> Adapt the bottom stack to look like this and move the burger menu down into the separated right bubble (reference screenshot)
+
+- `components/layout/BottomTabs.jsx` rebuilt:
+  - Look: a floating frosted-glass pill (teal-to-slate tint, blur, light top edge, soft shadow) holding the four tabs,
+    with white icons and labels; the active tab sits in its own darker inner pill, teal icon and label.
+  - Separate round glass bubble on the right for the menu, carrying the menu alert count that was on the header button.
+  - The bar floats clear of the edges and the home indicator. Its real height (including the gap) is still published
+    as `--bottom-tabs-h`, so content stops above it.
+- Menu location: while the bar is on screen it sets `html[data-bottom-nav]` and the header's menu button is hidden
+  (`index.css`). On screens without the bar (non-tab routes, an open chat conversation) the header keeps its menu
+  button, so the menu is always reachable.
+- Wiring: Layout passes `onMenuClick` and `menuAlerts` through `BottomTabsContainer`.
+- Checked in Chromium at 390px with the real component and the app's CSS: tabs 70x52 each, menu bubble 64x64,
+  header menu hidden, no horizontal overflow (`docs/mobile-previews/bottom-nav.png`). `verify:all` and the build pass.
+
 ## Invoice PDF stalled after building: capped link save (Base44 checkpoint 6affb46f0dd63de3b5eaf02f)
 
 > tried again, check the logs
