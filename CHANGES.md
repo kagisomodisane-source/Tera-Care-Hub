@@ -1,3 +1,33 @@
+## Mobile: content + button rows wrap instead of overlapping (Base44 checkpoint 6affa29e0e1ece6cc1a4795d)
+
+> (Invoices screenshot) Scan the app and fix such overlaps in mobile view
+
+### Cause
+- Rows built as `flex items-center justify-between` with the details on the left and a `flex gap-2` button group on the
+  right never wrapped. On a phone the details were squeezed into a narrow column and the buttons ran over them or off
+  the card (Invoices: View / Resend / Mark Paid cut off).
+
+### Scan
+- A code scan found **60 such rows** (2 to 5 buttons beside content, no mobile stacking or wrapping) across about 50 screens:
+  Invoices, Client Profile, Staff, Payroll, Compliance, MAR chart, notifications, documents, onboarding, policies and others.
+
+### Fix
+- `src/index.css`, phones only:
+  - A `flex justify-between` row containing buttons may wrap. Its buttons drop to their own line when they don't fit.
+  - A flex group of buttons may wrap its buttons.
+  - `flex-wrap` changes nothing when items fit, so rows that already fit are untouched. Rows meant to scroll sideways
+    (`flex-nowrap`, `overflow-x-auto`, tab lists) are excluded.
+- `pages/Invoices.jsx`: the draft / sent / overdue / paid / archived cards now stack explicitly on phones
+  (`flex-col sm:flex-row`), with the details full width (`min-w-0`) and buttons in a wrapping row underneath.
+  Unchanged from the `sm` breakpoint up.
+
+### Verification
+- Chromium at 390px with the app's compiled CSS. Before: details crushed to one word per line and buttons over the
+  QuickBooks badge. After: details on full lines, buttons in a row beneath, nothing past the card edge. A typical
+  unedited row from elsewhere also wraps; a row that fits is unchanged. Previews:
+  `docs/mobile-previews/overlap-before.png`, `overlap-after.png`.
+- 3 new checks in `verify-mobile-dropdowns` (16 total; the CSS ones fail on the old stylesheet). `verify:all` and the build pass.
+
 ## Mobile: second 44px rule (Layout.jsx) no longer stretches switches (Base44 checkpoint 6aff9b7586b5e2746e4d6882)
 
 > (screenshot, 00:56) toggles still 36 wide but 44 tall
