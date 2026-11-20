@@ -1,3 +1,18 @@
+## Bottom nav: clear glass, content scrolls behind it (Base44 checkpoint 6affc38801bcf5d0f64b1e55)
+
+> apply a full glassify to the bottom stack and remove the background layer
+
+- Removed the colour fill: the pill and the menu bubble are now clear glass (white 8% light / slate 18% dark veil),
+  with `backdrop-blur-2xl` + `backdrop-saturate-[1.8]`, a light rim, a top highlight and a soft shadow. The page shows
+  through, frosted. The active tab is a brighter glass inner pill.
+- Text and icons adapt so they stay readable on clear glass: slate on light (active teal), white on dark (active white).
+- Removed the background strip under the bar: the tab area no longer stops above the bar
+  (`pb-[var(--bottom-tabs-h)]` on the container), so content scrolls behind the glass. The same height is now padding
+  at the END of each scroll area (tab panels and pushed pages), so the last item still clears the bar.
+- The app build adds `-webkit-backdrop-filter` (autoprefixer) for iPhone Safari.
+- Checked in Chromium (GPU emulation, so backdrop blur renders) at 390px over real-looking content, light and dark:
+  content frosted behind the bar, no colour fill (`docs/mobile-previews/bottom-nav-glass.png`). `verify:all` and the build pass.
+
 ## Floating glass bottom navigation with a separate menu bubble (Base44 checkpoint 6affc19ebe0debb69eeb9200)
 
 > Adapt the bottom stack to look like this and move the burger menu down into the separated right bubble (reference screenshot)
