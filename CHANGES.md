@@ -1,3 +1,17 @@
+## Shift Swaps: compact page title that scrolls away (Base44 checkpoint 6affdcea56af374444e3d795)
+
+> fix the top header (Shift Swaps page header)
+
+- The "Shift Swaps" title block was a ~100px band (40px icon, 2-line description, square button) pinned under the
+  app header. On phones that left about 165px of fixed bars on screen. It is now a compact row:
+  - 36px icon;
+  - title and a description of up to 2 lines;
+  - a pill-shaped "New Swap" button (admins).
+- The row scrolls away with the page, so only the glass app header stays pinned. Readable in dark mode.
+- Guards updated: `verify-shift-swaps` checks the title is not pinned and readable; `verify-shell-layout` no longer
+  lists Shift Swaps among pinned bars. verify:all and the build pass. Preview:
+  `docs/mobile-previews/shift-swaps-header.png`.
+
 ## Shift Swaps: carers could not offer upcoming shifts; clash check blind to current rotas (Base44 checkpoint 6affdb730479acc9969fe25d)
 
 > check the shift swap page
