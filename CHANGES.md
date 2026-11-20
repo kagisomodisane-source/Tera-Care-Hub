@@ -1,3 +1,24 @@
+## Portal PDFs never stuck on "Preparing your document" (Base44 checkpoint 6affb37621bb9c5fffa2f91a)
+
+> stuck on the preparing document page
+
+### What the logs showed
+- generateInvoicePdf was called (instances started 02:27, 02:29 and 02:36) but logged nothing: no error, and no
+  OneDrive backup call (uploadToOneDrive's last call was 13-11). So no attempt reached a finished PDF. The function's
+  early exits are silent, so it could not be told where they stopped.
+
+### Fix
+- `PortalPdfActions`: preparing a PDF now times out after 60 s instead of waiting for ever. On any failure the pre-opened
+  tab is replaced with a plain message ("That document could not be prepared", the server's reason or "taking too
+  long", and a Close button). Before, the code tried `tab.close()`, which phones and the installed app often refuse,
+  leaving the tab on the loader. New `writeMessagePage` in `components/ui/LogoLoader.jsx`.
+- `generateInvoicePdf`:
+  - a step log (start / denied + reason code / allowed / built / uploaded / done, with ms; ids and codes only) so the
+    next attempt shows exactly where it stops and why;
+  - the admin-only OneDrive backup is capped at 8 s so it can never hold the PDF back. It is still staff-only, and
+    `verify-portal-access` was updated to require that.
+- `verify-portal-fixes` 50/50 (+4); portal-access 183/183; `verify:all` and the build pass.
+
 ## Portal invoice PDFs: access decided in-process (Base44 checkpoint 6affaed1b7da025f58e0b56c)
 
 > portal is not able to make invoice pdfs
