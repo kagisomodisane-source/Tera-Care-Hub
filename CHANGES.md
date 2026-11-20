@@ -1,3 +1,16 @@
+## Invoice PDF stalled after building: capped link save (Base44 checkpoint 6affb46f0dd63de3b5eaf02f)
+
+> tried again, check the logs
+
+- Step log from the retry (02:43): `start` → `allowed` (representative, not admin, invoice QB-1389, 913 ms) →
+  `built` (1248 ms) → nothing. So the access fix worked and the PDF was made; it stalled in `uploadPDF`, which awaited
+  the Invoice update (saving `invoice_pdf_url`) with no limit. The weekly-report and visit-note PDFs, which work in the
+  portal, both note that this link save "has been seen to stall" and cap it.
+- `uploadPDF` now matches them: it uploads an `arraybuffer` (not `blob`), and caps the link save at 4 s so the PDF is
+  returned regardless. Each sub-step is logged (`uploading` bytes, `file_stored`, `link_saved` /
+  `link_save_slow_skipped` / `link_not_saved`).
+- `verify-portal-fixes` 53/53 (+3); portal-access 183/183; `verify:all` and the build pass.
+
 ## Portal PDFs never stuck on "Preparing your document" (Base44 checkpoint 6affb37621bb9c5fffa2f91a)
 
 > stuck on the preparing document page
