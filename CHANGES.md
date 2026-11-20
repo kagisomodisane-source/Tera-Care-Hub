@@ -1,3 +1,16 @@
+## Chat: compact conversation header on phones (Base44 checkpoint 6affd8b121f2c2872feaf71d)
+
+> fix the header height in the chats on mobile
+
+- `ChatWindow.jsx`: the conversation header had `my-3` (12px of blank space above and below) on top of its own
+  padding. On phones that made it about 89px tall, with a white gap under the status bar. It is now one 56px row
+  (`px-2.5 py-1.5 min-h-[56px]`); the margin stays on tablet/desktop only (`md:my-3`).
+- `Chat.jsx`: the close (X) button lost its matching `my-3` and sits at `6px + safe-area`, centred on the new
+  header (measured: header 57px, button 44px, centres within 0.5px).
+- `Chat.jsx`: the Messages list header's gap above it on phones is reduced from 12px to 4px (`mt-1 mb-0 md:my-3`).
+- 32px more room for messages on phones. Preview: `docs/mobile-previews/chat-header-before-after.png`.
+  verify:all and the build pass.
+
 ## Visit Note editor: Cancel / Save / Submit in the glass bottom bar (Base44 checkpoint 6affd68f05822fb5d258603b)
 
 > for the visit notes page use the cancel, save and submit note in the new bottom stack to replace the standard configuration but retain the menu bubble also
