@@ -1,3 +1,41 @@
+## Client portal: bug scan and fixes (Base44 checkpoint 6affaa5c35c61dd74a687b40)
+
+> scan the client portal for bugs and fix
+
+Scanned: `pages/ClientPortal.jsx`, all 22 files in `components/portal/`, and `functions/getClientPortalData`.
+
+### Fixed
+1. **Medication: doses that were not due were shown as "Not given" with a warning.** The server sent "no" for every
+   `administered: false`, but carers also use that for "Not due yet", "To be taken at 17:00", "N/A", "Not needed" and
+   for as-required (PRN) medicines that were not needed. Real records: 93 doses showed as Not given and **48 of them were
+   not due or not needed**. The server now sends `yes / not_due / no / unknown` plus a PRN flag (`medicationOutcome`).
+   The view shows "Not due" / "Not needed" (neutral), "Not recorded", or "Not given" with the reason. The summary
+   counts only due doses ("1 of 3 due doses given …"). Refusals and blank reasons stay "Not given".
+2. **Care Plan tab hid About Me when there was no active plan.** It returned early, so a family could not add or see
+   their About Me input until a plan existed. About Me now shows under the "No care plan" message.
+3. **"Ask for an earlier day" form showed in manager preview.** The server refuses it, so the manager got an error.
+   It is now replaced with a note in preview, like About Me and Feedback.
+4. **Invoices said "Sent" when overdue.** The stored status stays "sent", so the portal now works out the standing: Paid
+   when the balance is 0, "Overdue · N days" past the due date, otherwise the status. The balance comes from the same rule.
+5. **Download fallback on iPhones claimed a tab had opened when it was blocked.** The fallback runs after an await, so
+   iOS blocks the popup. If it is blocked, the message now offers an Open button (a fresh tap) instead.
+6. **Risk assessment: a missing level showed a bare "risk", and plain-text concerns/actions showed as blank rows.**
+   It now says "Risk level not set" and shows string and object entries alike.
+7. **PDF buttons kept the first URL** and ignored a PDF made after the page loaded; they now pick up the newer one.
+8. **Feedback saved an empty client name for organisation clients** (missing the `organisation_name` fallback that
+   every other portal action has).
+
+### Checked, not bugs
+- Draft, archived and cancelled invoices are already filtered out server-side.
+- Visit notes are already sorted newest first (Home's "latest" is correct).
+- Every client has a `full_name`.
+
+### Verification
+- Real components rendered with sample data: 15/15 (medication labels and counts, overdue/sent/paid invoices, About Me
+  without a plan, preview hides the request form, risk level and string entries, no runtime errors).
+- New `verify-portal-fixes` (21 checks, including the classification on every real reason found; fails on the old code).
+  `verify-portal-access` 183/183. `verify:all` and the build pass.
+
 ## Mobile: content + button rows wrap instead of overlapping (Base44 checkpoint 6affa29e0e1ece6cc1a4795d)
 
 > (Invoices screenshot) Scan the app and fix such overlaps in mobile view
