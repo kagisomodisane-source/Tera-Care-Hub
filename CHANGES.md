@@ -1,3 +1,38 @@
+## Scan after the layout changes: fixes + layout guard (Base44 checkpoint 6affd2f1586060fce64e8f48)
+
+> run a scan to make sure all the new adjustments have taken and scan for bugs
+
+Confirmed live: the deployed version (checkpoint 6affcef3…, built without errors) contains every change from today:
+glass header/sidebar, content under the header, bottom nav everywhere, Messages rule, slim toggles, native
+dropdowns, invoice PDF fixes. The live bundle itself sits behind the app login, so it was checked through the
+deployed checkpoint's source.
+
+Bugs found and fixed:
+- **Visit Note editor: Save / Cancel bar covered by the bottom nav.** The editor pins its own action bar to the
+  bottom of the screen. It was outside the tab routes before, so the nav never showed there. Now the nav steps aside
+  on that page (`OWN_BOTTOM_BAR_ROUTES` in `BottomTabsContainer`), as it does inside a chat, and the header menu
+  button returns.
+- **Old 65px header offsets.** The mobile menu panel (`.mobile-sidebar`), the offline banner and the offline sync
+  indicator still assumed a 65px header. On tablets and notched phones that overlapped the taller header. They now
+  use the measured `--app-header-h`.
+- **Toasts under the nav on tablets** (640–1023px, bottom-right): they now sit above it (`toast.jsx`).
+- **Portal invoice PDFs 4 s slower than needed.** Logs show 6 portal downloads since the fix, all successful
+  (~6 s each). Every one waited the full 4 s for a link save that never completes (`invoice_pdf_url` is still empty
+  on those invoices). The portal never reads that link, so portal downloads now skip it (about 2 s). Staff downloads
+  unchanged.
+
+New guard: `scripts/verify-shell-layout.mjs` (24 checks, in `verify:all`):
+- glass classes;
+- measured header height and no hard-coded 65px;
+- content padding under the header;
+- page bars stick below the header (any new `sticky top-0` fails until reviewed);
+- every fixed/sticky bottom element clears the nav or is on a page where it steps aside;
+- the Messages rules;
+- the header menu fallback.
+
+verify:all (incl. portal-access 183/183, portal-fixes 53/53) and the build pass. `getClientPortalData` logs:
+no errors.
+
 ## Messages: bottom bar on the conversation list (Base44 checkpoint 6affcef3a11e93b55cfbd40e)
 
 > option 1: the bar on the Messages conversation list only
