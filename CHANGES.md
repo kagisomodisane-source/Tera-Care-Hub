@@ -1,3 +1,15 @@
+## Messages: bottom bar on the conversation list (Base44 checkpoint 6affcef3a11e93b55cfbd40e)
+
+> option 1: the bar on the Messages conversation list only
+
+- `BottomTabsContainer.jsx`: the bar shows on the Messages conversation list again (with Messages highlighted), and
+  stays hidden inside an open conversation (existing `wellstride:chat-conversation` signal). The composer keeps
+  the bottom of the screen and the keyboard behaves as before. Messages still does not scroll under the header.
+- `Chat.jsx`: the list height uses the measured header and bar (`--app-header-h`, `--bottom-tabs-h`) instead of a
+  fixed 65px. On tablets (md, where the bar also shows) it now subtracts the bar, so the split-view composer is no
+  longer covered by it.
+- verify:all and the build pass.
+
 ## Content scrolls under the glass header; bottom bar on every page except Messages (Base44 checkpoint 6affcafd95a1bd89fb87a52c)
 
 > make content scroll under the header too and apply the new bottom stack to all pages on Mobile except the messages
