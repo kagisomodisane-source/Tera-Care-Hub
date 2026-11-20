@@ -1,3 +1,39 @@
+## Portal invoice PDFs: access decided in-process (Base44 checkpoint 6affaed1b7da025f58e0b56c)
+
+> portal is not able to make invoice pdfs
+
+### Cause
+- For anyone not an admin, `generateInvoicePdf` decided access by calling `getClientPortalData`
+  (`action: 'mayOpenInvoice'`) from inside the function, a function-to-function hop that must carry the caller's own
+  session. Anything but an explicit yes became a silent 403 (nothing logged). Every other portal PDF (visit notes,
+  weekly reports) checks access in-process and worked; the function logs showed no crashes; and the PDF code itself
+  rendered every real invoice without error (QB-1393, QB-1389 and others, with and without company and client details).
+  So the hop is what failed.
+
+### Fix
+- `generateInvoicePdf` now decides in-process with the portal's own rules. It has a **verbatim copy** of
+  getClientPortalData's permission code (PORTAL_ACCESS, BUILT_IN, normalisePermissions, readPortalDefaults,
+  resolvePermissions, resolveAccess …):
+  - an accepted, enabled invitation, found as the portal finds it (email compared case-insensitively);
+  - for the client the invoice itself names;
+  - with the invoices tab allowed by the configured permissions (built-in, then type default, then personal override);
+  - for an invoice the portal lists (not draft, cancelled or archived).
+  - Admins as before.
+- A drift guard (in `verify-portal-access` and `verify-portal-fixes`) fails if the copy differs from getClientPortalData
+  by one character (tested by changing the portal's table: caught).
+- Also in the invoice PDF: text is cleaned of characters jsPDF's fonts cannot draw (–, ’, “ ”, …, ›) instead of
+  printing junk; a client address stored as an object prints as lines, not "[object Object]".
+- Portal PDF buttons now show the server's reason on failure (e.g. "Access denied") instead of only "Please try again".
+
+### Verification
+- Behaviour of the copied rules: a legal rep can open their client's invoice (email case ignored); refused for
+  another client's invoice, a family member without the invoices tab, suspended or not-accepted invitations, and
+  draft or archived invoices; a family member is allowed when the admin defaults grant invoices.
+- The two `verify-portal-access` checks written for the old design were rewritten to guard the same properties
+  (starts from admin; client from the invoice; configured tab; listing rule; verbatim copy). Mutations are caught:
+  `let allowed = true` and dropping the tab check both fail.
+- portal-access 183/183, portal-fixes 46/46; `verify:all` and the build pass; function boots cleanly after deploy.
+
 ## Client portal: bug scan and fixes (Base44 checkpoint 6affaa5c35c61dd74a687b40)
 
 > scan the client portal for bugs and fix
