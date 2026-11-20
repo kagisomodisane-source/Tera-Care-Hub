@@ -1,3 +1,13 @@
+## Data: old unread notifications marked as read (no code change)
+
+> mark all the old notifications as read
+
+- 482 unread, non-archived notifications created before 13-11-2026 (older than 7 days), across all accounts, set to
+  `read: true` with `read_reason: "Bulk marked read by admin: older than 7 days (20-11-2026)"`, so they can be found
+  and reversed. Re-checked afterwards: 0 left.
+- 113 unread notifications from the last 7 days left unchanged.
+- AuditLog `6affece8f92e9281ebaec0a2`.
+
 ## Badge counts and notifications back in sync (Base44 checkpoint 6affeaf749f7282ba052856d)
 
 > some of the badge counts and notifications are out of sync check the code
