@@ -1,3 +1,42 @@
+## Push notifications and audio alerts fixed (Base44 checkpoint 6afffa6c2240dc62729c9037 + workflow "Push new notifications")
+
+> Notifications and audio alerts are not coming through onto the app, check the PWA and fix bugs preventing this
+
+The PWA itself was fine: the service worker is registered, subscriptions are saved, and pushes that were sent arrived
+on iOS, Android, macOS and Windows (dead subscriptions are retired on 410). What was broken:
+
+1. **Most notifications never became a push.** The app creates notifications as plain records
+   (`db.Notification.create`). Only `notificationService` sends pushes, and few callers used it: about 113
+   notifications in the last week produced about 6 pushes.
+   - New backend function `pushNotificationRecord`. New workflow **"Push new notifications"** (entity trigger:
+     Notification create) runs it for every new record.
+   - It sends a push only, to the named person, or to every admin and manager for team notifications. It goes
+     through `notificationService`, so quiet hours and preferences still apply. It records `push_status` /
+     `push_sent_at` on the record (new schema fields).
+   - It never pushes twice: records `notificationService` made itself are marked `handled_by_service`. Read,
+     archived and >30-minute-old records are skipped.
+2. **Carer alerts to managers were refused.** Accepting or declining a shift and force clock-out call
+   `notificationService` from the carer's session. It only allowed admins or jobs, so it returned 403 and managers
+   got neither the in-app notification nor the push. Signed-in non-privileged users may now send notifications
+   addressed to management, and nothing else.
+3. **Alerts addressed to "admin" went nowhere.** They were stored and pushed against the literal address "admin".
+   They now become one shared team notification (shown to admins and managers by the badge and Notifications page),
+   plus push/email to each admin and manager.
+4. **No sound or toast for a push while the app was open.** The service worker posts `{payload: {title, options}}`
+   and the listener read fields that message never has. Fixed (`fromServiceWorker`).
+5. **No sound for team alerts in the app.** The realtime listener only matched the user's exact email. It now also
+   plays for admins/managers on team alerts; email case is ignored.
+6. **Audio went silent after the app was backgrounded (iOS).** The audio context was unlocked on the first tap only.
+   It is now resumed on every tap/return to the app, and a sound waits for the context to resume instead of being
+   lost. High priority now uses the alert sound. The push + realtime echo plays once, not twice.
+7. **Quiet hours were checked in UTC.** They are now checked in UK time (an hour out during BST).
+
+Verified live: a notification created through the app's data API triggered the workflow in under a second and was
+pushed to all 8 devices on the owner's account (no errors).
+
+New guard `scripts/verify-push-alerts.mjs` (15 checks) in `verify:all`. `verify-access-scope` 158/158. The build
+passes.
+
 ## Data: old unread notifications marked as read (no code change)
 
 > mark all the old notifications as read
