@@ -1,3 +1,21 @@
+## Glass top header and sidebar (Base44 checkpoint 6affc7e2a6f6e2ec81d7bdeb)
+
+> make the top header and side bar glass too
+
+- New `.glass-bar-top` / `.glass-sidebar` classes in `index.css` (with dark-mode versions). The header is a frosted
+  white veil (28% light / slate 35% dark) with `blur(28px) saturate(1.8)` and a light bottom rim. The sidebar keeps
+  the teal identity, now as a translucent teal gradient (about 60% opacity) with the same blur, so content shows
+  through, frosted, and the white menu text stays readable. Dark mode uses a translucent slate gradient.
+- `TopHeader.jsx` and `Sidebar.jsx` use the new classes. The "Wellstride" wordmark and subtitle are lighter in dark
+  mode so they read on the dark glass.
+- `Layout.jsx`: the dim layer behind the open mobile menu is lighter and slightly blurred, and the drawer edge is
+  a soft glass rim.
+- Content does not scroll under the header: about ten pages (Chat, Shift Swaps, Visit Notes, Care Plan editor,
+  Role Management and others) have their own `sticky top-0` bars that would slide under it. The glass shows the app
+  background instead.
+- verify:all passes, build passes (`-webkit-backdrop-filter` included for iPhone). Preview:
+  `docs/mobile-previews/header-sidebar-glass.png` (light / dark).
+
 ## Bottom nav: no count badges on the four tabs (Base44 checkpoint 6affc50f78345c5b020002b7)
 
 > remove the number counting badge from the items in the main bubble with the 4 menus, leave the separated bubble as is
