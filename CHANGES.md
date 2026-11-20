@@ -1,3 +1,15 @@
+## Mobile: second 44px rule (Layout.jsx) no longer stretches switches (Base44 checkpoint 6aff9b7586b5e2746e4d6882)
+
+> (screenshot, 00:56) toggles still 36 wide but 44 tall
+
+- `src/Layout.jsx` injects its own phone `<style>` with `button, a[role="button"] { min-height: 44px }`. The index.css fix
+  did not cover it, so switches were 36x44, and checkboxes/radios 16x44. It now skips `[role=switch|checkbox|radio]`
+  like index.css; their tap area still comes from the 44px `::after` hit area.
+- No other style in the app stretches buttons (searched).
+- Reproduced in Chromium at 390px: old rule gives switch 36x44 and checkbox 16x44; the fixed rule gives 36x20 and 16x16.
+  Normal buttons stay at 44px.
+- `verify-mobile-dropdowns` 13 checks (new one for Layout.jsx); `verify:all` and the build pass.
+
 ## Mobile: switches slimmed to 36x20 (Base44 checkpoint 6aff967301bcf5d0f64af975)
 
 > These toggles size and style are too big on mobile view (screenshot of Settings › General)
