@@ -1,3 +1,11 @@
+## Bottom nav: no count badges on the four tabs (Base44 checkpoint 6affc50f78345c5b020002b7)
+
+> remove the number counting badge from the items in the main bubble with the 4 menus, leave the separated bubble as is
+
+- `BottomTabs.jsx`: the red count badges on Dashboard / Shifts / Messages / Tasks are removed (and the now-unused
+  `Count` component). Screen readers still hear the count in each tab's label ("Tasks, 11 pending").
+- The separate menu bubble is unchanged and keeps its alert badge. Build passes.
+
 ## Bottom nav: clear glass, content scrolls behind it (Base44 checkpoint 6affc38801bcf5d0f64b1e55)
 
 > apply a full glassify to the bottom stack and remove the background layer
