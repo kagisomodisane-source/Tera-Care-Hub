@@ -1,3 +1,22 @@
+## Content scrolls under the glass header; bottom bar on every page except Messages (Base44 checkpoint 6affcafd95a1bd89fb87a52c)
+
+> make content scroll under the header too and apply the new bottom stack to all pages on Mobile except the messages
+
+- `Layout.jsx` measures the fixed header (banner + offline strip, notch included) and publishes it as
+  `--app-header-h` (CSS fallback = the old 65px + safe-area). `<main>` no longer reserves that space (except on
+  Messages). Each scroller pads its own top instead: the tab panels and pushed pages in `BottomTabsContainer`
+  (`pt-[var(--app-header-h)]`). Content now starts below the header and scrolls up under the glass.
+- Pinned page bars stop just below the header instead of sliding under it: ShiftSwaps toolbar, Care Plan editor
+  bar, Visit Note tabs (was hard-coded 60/72/88px), Settings save bar. All are `top-[var(--app-header-h)]`.
+- Bottom bar on every page: Layout now wraps every staff page in `BottomTabsContainer`, not just the tab routes.
+  Other pages (Invoices, Clients, Payroll...) keep pull-to-refresh and their bottom gap. On those pages no tab is
+  highlighted, and tapping a tab goes to where that tab was left (or its root).
+- Messages: the bar is not shown there at all (list or conversation). The header's menu button comes back
+  automatically, so the rest of the app stays one tap away. Client representatives are unchanged.
+- Things that sat at the bottom now sit above the bar on phones: shift bulk-actions bar (was a fixed 64px),
+  Settings / Notification "unsaved changes" cards, offline indicator, install prompt.
+- verify:all and the build pass.
+
 ## Glass top header and sidebar (Base44 checkpoint 6affc7e2a6f6e2ec81d7bdeb)
 
 > make the top header and side bar glass too
