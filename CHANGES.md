@@ -1,3 +1,13 @@
+## Mobile: switches slimmed to 36x20 (Base44 checkpoint 6aff967301bcf5d0f64af975)
+
+> These toggles size and style are too big on mobile view (screenshot of Settings › General)
+
+- The screenshot showed 44x44 round toggles, the pre-fix behaviour: it was taken at 00:34, within a minute of the previous
+  fix going live (00:33). The published build does contain the fix; the phone was still on the cached version.
+- Per the feedback, phones now use the same slim switch as desktop (36x20 track, 16px thumb) rather than the 44x24
+  phone size. The invisible 44px tap area (index.css) stays, so it is still easy to tap.
+- `verify-mobile-dropdowns` check updated (12/12); `verify:all` and the build pass.
+
 ## Mobile: toggle switches, checkboxes and radios keep their shape (Base44 checkpoint 6aff9547a3d96b597a0f2218)
 
 > fix the toggle switches through the mobile app they are disproportional to the mobile view
