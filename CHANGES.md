@@ -1,3 +1,24 @@
+## Mobile: toggle switches, checkboxes and radios keep their shape (Base44 checkpoint 6aff9547a3d96b597a0f2218)
+
+> fix the toggle switches through the mobile app they are disproportional to the mobile view
+
+### Cause
+- `src/index.css` forces every `button` on phones (under 768px) to at least 44x44px for tapping. Radix switches, checkboxes
+  and radios are `<button role="switch|checkbox|radio">`, so a 36x20 switch became a 44x44 blob with a 16px thumb
+  that moved 16px. A 16px tick box became a 44px square, and radios too.
+
+### Fix
+- The 44px rule now skips `[role=switch]`, `[role=checkbox]` and `[role=radio]`. They keep their drawn shape and get
+  the 44px touch target from an invisible `::after` hit area instead.
+- `components/ui/switch.jsx`: slightly larger on phones (44x24 track, 20px thumb, matching travel), unchanged 36x20 on
+  wider screens.
+- Applies to every switch, checkbox and radio in the app (shared components).
+
+### Verification
+- Rendered in Chromium at phone width with the app's compiled CSS: switch 44x24, checkbox/radio 16x16, desktop
+  switch 36x20 (preview `docs/mobile-previews/toggles-phone.png`). Hit-testing: each control responds 20px out on every side.
+- `verify-mobile-dropdowns` gains 3 checks (fail on the old code); `verify:all` and the build pass.
+
 ## Company details in Settings; invoice PDF rebuilt with them and the payment position (Base44 checkpoint 6aff8959ba98674539628d15)
 
 > allow for company details to be inputed by admin as Wellstride is a management app not the actual company in the settings then carry on with 4
