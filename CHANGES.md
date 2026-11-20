@@ -1,3 +1,20 @@
+## Chat: glass conversation header (Base44 checkpoint 6affda28d18bad1f52c73dc9)
+
+> make the chat header glass too
+
+- `ChatWindow.jsx`: the conversation header (and the message-search panel when open) is now a frosted glass layer
+  floating over the message list: `bg-white/55`, `backdrop-blur-2xl`, `backdrop-saturate-[1.8]`, a light rim and a
+  soft shadow. Messages scroll up under it and show through, frosted.
+- On phones it reaches up behind the status bar (`max-md:pt-[env(safe-area-inset-top)]`). The solid white strip that
+  `Chat.jsx` used to add there is removed.
+- The header's height (status bar + 56px row + search panel) is measured with a ResizeObserver and used as the
+  message list's top padding. With the list scrolled to the top, the oldest message starts below the header:
+  measured 120px vs a 104px header on a notched phone.
+- `Chat.jsx`: the close (X) button is now a glass bubble (`bg-white/45`, blur, white rim) and sits above the header
+  layer.
+- Preview: `docs/mobile-previews/chat-header-glass.png` (left: top of the chat; right: messages scrolled under the
+  glass). verify:all and the build pass.
+
 ## Chat: compact conversation header on phones (Base44 checkpoint 6affd8b121f2c2872feaf71d)
 
 > fix the header height in the chats on mobile
