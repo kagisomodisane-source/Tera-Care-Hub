@@ -1,3 +1,31 @@
+## Android scrolling fixed (Base44 checkpoint 6b02a2f6c91419eb2be2bc49)
+
+> Some android users are reporting scrolling issues
+
+Reproduced on an emulated Pixel 7 with real touch input (Playwright + CDP touch events), old code vs new:
+
+| Test | Before | After |
+|---|---|---|
+| Page scrolled down, swipe to scroll back up | blocked: scrollTop stayed 1500, a refresh fired | scrolls up (1500 → 1032), no refresh |
+| At the top, pull down | refreshes | refreshes |
+| Bar fixed to the screen bottom inside the page | drawn 7,740px down the page | at the screen bottom (839/839) |
+
+1. **Pull-to-refresh hijacked scrolling up** (`PullToRefresh.jsx`). On every page outside the four main tabs
+   (Invoices, Clients, Payroll, Settings…) the page scrolls in `<main>`, an ancestor of the pull-to-refresh box. The
+   scroller search stopped at the box, never found `<main>`, and reported "at the top" whatever the scroll position.
+   So every downward swipe was claimed as a pull: scrolling stopped and the page refreshed on release. The search now
+   walks up to the real scroller (or the window).
+2. **Whole page was one GPU layer.** The pull-to-refresh content had a permanent `will-change: transform`. On
+   Android, long pages became one huge GPU layer, showing as blank or flickering patches and stutter. It also made
+   the page the containing block for `position: fixed` bars inside it (e.g. the shift bulk-actions bar ended up at
+   the end of the page). Now the layer is only added while a pull is in progress.
+3. **Heavy glass blur on Android.** Content scrolls under the header and bottom bar, so the 28–40px backdrop blur was
+   recomputed every frame. Android now gets a 10px blur with a firmer tint (header, sidebar, bottom bar, menu bubble,
+   chat header and other `backdrop-blur` surfaces; `html.is-android`, set in `main.jsx`). iPhone and desktop
+   unchanged.
+
+New guard `scripts/verify-android-scroll.mjs` (7 checks) in `verify:all`. verify:all and the build pass.
+
 ## Push notifications and audio alerts fixed (Base44 checkpoint 6afffa6c2240dc62729c9037 + workflow "Push new notifications")
 
 > Notifications and audio alerts are not coming through onto the app, check the PWA and fix bugs preventing this
