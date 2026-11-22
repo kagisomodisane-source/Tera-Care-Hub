@@ -1,3 +1,41 @@
+## In-app alerts redesigned (Base44 checkpoint 6b02b30dc2be8c31a0c872ba)
+
+> Redesign the way alerts present themselves in-app, more visually similar to the app theme, and improve their
+> functionality
+
+**Before:** the medication alert was sonner's stock rich-colour error toast:
+- a dark red slab that spelled every medicine out as one run-on sentence;
+- a static "1h 8m overdue";
+- no way to dismiss or snooze it;
+- "View Service User" reloaded the whole app;
+- it dropped in over the header, and the push banner for the same alert landed on top of it.
+
+**New `AppAlert` card** (`src/components/notifications/AppAlert.jsx`), used by medication alerts and live
+notifications:
+- The app's frosted-glass card (light and dark), with a tone chip: critical rose, warning amber, info teal, success
+  emerald.
+- Title, one-line subtitle (client · due time) and a time pill.
+- Medicines as chips: 3 shown, "+N more" expands.
+- A primary action that navigates in place (no reload), an optional secondary action, and a close button.
+- Updating with the same id changes the card in place; nothing stacks up.
+
+**Medication alerts** (`MedicationAlertsMonitor.jsx`):
+- The overdue time counts up live every minute, and the list shrinks as doses are recorded.
+- **Open MAR** opens the client straight on the medication chart (`tab=medical-history`) and treats the alert as
+  acknowledged for 15 minutes: it returns if the dose is still not recorded.
+- **Snooze 15 min**.
+- **Close (×)** hides it until the dose is recorded. The green "Medication given" card still appears when it is.
+- The phone push for this alert is sent only when the app is not on screen, so there is no banner on top of the
+  in-app card.
+
+**Live notifications** (`NotificationToast.jsx`): same card, tone by priority (urgent → critical, high → warning,
+else info), with **View** navigating in place.
+
+**All other toasts** (`ui/sonner.jsx`, `App.jsx`): glass style, status shown by icon colour (`richColors` removed),
+max 3 visible. Every toast now sits below the header (`offset`/`mobileOffset` = `--app-header-h` + 8px), not over it.
+
+Preview: `docs/mobile-previews/in-app-alerts.png` (collapsed, expanded, dark). verify:all and the build pass.
+
 ## Dead-code sweep and startup performance (Base44 checkpoint 6b02b03f9551bf5935f0de9a)
 
 > Systematically sweep the app for dead and redundant code to improve efficiency and performance
