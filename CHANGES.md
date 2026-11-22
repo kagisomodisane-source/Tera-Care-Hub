@@ -1,3 +1,32 @@
+## Keyboard-aware typing: the field being typed in stays visible (Base44 checkpoint 6b02eac1fb118fd1a0c03430)
+
+> When typing the keyboard obstructs some of the lower texts on a page, make an animation that will ensure that when
+> keyboard is present the bottom of the page is visible so user can see text they typing in
+
+New `src/components/layout/keyboardAware.js`, started once in `main.jsx` for the whole app (touch devices). It watches
+the visual viewport (the screen area the keyboard leaves visible):
+- Marks `<html>` with `.kb-open` and publishes `--kb-h`, `--vv-top`, `--vv-h`.
+- **Glides** the focused field into the visible area, below the header and above the keyboard with a 16px gap, once
+  the keyboard has opened, and again when moving between fields.
+- As a text box grows while typing, it keeps the last line in view; a box taller than the space shows its bottom,
+  where the typing is.
+- **Room to scroll:** while the keyboard is up, `main` and the tab panels get bottom padding equal to the keyboard,
+  so even the last field on a page can be lifted clear.
+- **Bottom bars** (tab bar + menu bubble, Visit Note actions) slide down and fade out while typing (`.keyboard-hideable`)
+  and return when the keyboard closes.
+- **Dialogs** re-centre in the visible area above the keyboard, fit its height and scroll, with an animated move.
+- Honours reduced motion. Chat is left alone (`data-keyboard-managed`); it already sizes itself to the keyboard.
+
+Tested on an emulated iPhone 14 with a simulated 336px keyboard:
+- the last field on a long page went from behind the keyboard (bottom at 650 of 328 visible) to fully visible
+  (226–312);
+- growing it to 260px kept it visible;
+- the bottom bar hid and came back.
+
+`verify-android-scroll` is now 14 checks. Also: `OAuthConsent.jsx` / `AuthLayout.jsx` (removed in the dead-code sweep)
+are Base44 platform templates that the platform re-adds. They are back, and `verify-no-dead-code` now allows them.
+verify:all and the build pass.
+
 ## In-app alerts redesigned (Base44 checkpoint 6b02b30dc2be8c31a0c872ba)
 
 > Redesign the way alerts present themselves in-app, more visually similar to the app theme, and improve their
