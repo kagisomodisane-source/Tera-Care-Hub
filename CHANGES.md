@@ -1,3 +1,67 @@
+## Dead-code sweep and startup performance (Base44 checkpoint 6b02b03f9551bf5935f0de9a)
+
+> Systematically sweep the app for dead and redundant code to improve efficiency and performance
+
+Method: built the real import graph from `src/main.jsx` with esbuild (same `@` and `date-fns` aliases and the same
+resolution order as Vite). Anything not reachable from the entry point is dead. Checked every candidate against the
+test scripts, routing, the live workflows and the backend before removing it.
+
+**Startup performance** (what every user downloads on opening the app):
+
+| | Before | After |
+|---|---|---|
+| Main bundle (Vite build) | 1,502 KB | 730 KB (229 KB gzipped) |
+| Startup code (esbuild, entry + static chunks) | 997 KB | 757 KB |
+
+- `App.jsx` imported 13 pages eagerly, so all of them were in the main bundle for every user. This also defeated the
+  lazy versions `pages.config.js` already had for Dashboard and ClientPortal. They now load on demand via the
+  existing `lazyRetry` (now exported from `pages.config.js`).
+- `Sidebar.jsx` imported `SidebarCustomizer` (drag-and-drop: `@hello-pangea/dnd` + `react-redux`, ~90 KB) at
+  startup. It is now `React.lazy`, loaded when "Customise menu" is opened.
+- `PageTransition.jsx` used framer-motion (~123 KB at startup), and `AnimatePresence mode="wait"` held every
+  navigation for the old page's 0.28 s exit animation. It is replaced by a CSS slide-in (`.page-enter-*` in
+  `index.css`): same direction-aware look, no wait, honours reduced motion, and leaves no transform behind.
+  `OfflineIndicatorBanner` switched from framer-motion to the existing tailwindcss-animate classes.
+
+**Dead code removed:**
+- **152 source files, 16,565 lines**, none loaded by the app:
+  - 5 unrouted pages: ClientOnboarding, OAuthConsent, PermissionsManagement, Policies, StaffMobileApp;
+  - 32 unused UI primitives;
+  - 11 unused hooks;
+  - a second PullToRefresh, MobileBottomNav and other unused mobile components;
+  - old offline/sync widgets, RBAC prototypes, `src/public/service-worker.js` (the live worker is `public/sw.js`)
+    and others.
+  - All are recoverable from git history.
+- **22 unused npm packages** (66 → 44 runtime dependencies; 42 installed packages removed): react-hook-form, zod,
+  @hookform/resolvers, lodash, react-window, react-hot-toast, embla-carousel-react, input-otp, canvas-confetti,
+  react-resizable-panels, web-push (backend functions import their own copy), and 11 unused @radix-ui packages.
+  `html2canvas` is kept (jsPDF loads it).
+- Kept on purpose: `src/api/entities.js` / `integrations.js` (Base44 scaffold used by its legacy-SDK option) and
+  dev-only packages.
+
+**Found along the way:**
+- `PortalWellbeing.jsx` and `portalWellbeing.js` sat side by side with names differing only in case; they resolved
+  correctly only by luck of extension order. The helper is renamed to `wellbeingSummary.js`.
+- A test (`verify-shift-notes`) guarding the managers' "visit note missing" alert was reading an unused copy
+  (`AnomalyDetector.jsx`). It now checks the live `AnomalyDetectorInteractive.jsx`, which has the same rule.
+- Carer alerts to managers from My Shifts (shift accepted, shift declined, force clock-out) asked for in-app only,
+  so managers got no phone push even after the push fix. They now request in-app + push.
+
+**Not removed — for a decision:** 8 backend functions that nothing calls, and that no workflow runs:
+- `verify2FA`, `disable2FA`, `regenerate2FABackupCodes`: the two-factor settings screens were never connected to
+  any page, so 2FA could not be set up from the app.
+- `getOneDriveFiles`, `generateTrainingCertificate`, `sendUrgentFormNotification`, `accessReviewSnapshot`,
+  `releaseReviewedVisitNotes`.
+
+New guard `scripts/verify-no-dead-code.mjs` (7 checks) in `verify:all`:
+- no unreachable source files;
+- no names that differ only in case;
+- no pages, drag-and-drop or framer-motion at startup;
+- startup under 850 KB;
+- no eager page imports in `App.jsx`.
+
+verify:all, the local build and Base44's build pass.
+
 ## Pull-to-refresh: no more double indicator on iPhone (Base44 checkpoint 6b02a9f2b8f1bab5681b2c41)
 
 > Check the pull to refresh it appears in doubles on iphone
