@@ -1,3 +1,21 @@
+## Write Visit Note while clocked in: opens the editor and resumes the draft (Base44 checkpoint 6b030fbe1430b35902c880a2)
+
+> The write visit note feature seems to have a bug primarily when you're still clocked in, it's not allowing staff to write notes
+
+**Root cause.** On My Shifts, the active-shift "Write Visit Note" button (and the redirect after clocking out) sent carers
+to `MyVisitNotes?shiftId=…`. That page only opened the editor when *no* note existed for the shift. A carer who had
+saved a draft mid-visit tapped the button and was dropped on the notes list with no way back into their note, and the
+button kept saying "Write" because its label only counted submitted notes. At the time of the fix, 2 of the 4
+clocked-in shifts had a saved draft and were hitting this.
+
+**Fix.**
+- `MyShifts.jsx`: new `openVisitNote(shiftId)` goes straight to the editor: a submitted note opens by `noteId`
+  (never a duplicate), otherwise by `shiftId`, where the editor already resumes the carer's own draft
+  ("Resumed your saved draft for this visit"). Used by the active-shift button and both clock-out redirects.
+- Button reads "Continue Visit Note" when a draft exists.
+- `MyVisitNotes.jsx`: an old `?shiftId=` link now always opens the editor (submitted note by id, else the draft/new note).
+- `verify-shift-notes`: 4 new regression checks (45/45). verify:all and build pass.
+
 ## Keyboard-aware typing: the field being typed in stays visible (Base44 checkpoint 6b02eac1fb118fd1a0c03430)
 
 > When typing the keyboard obstructs some of the lower texts on a page, make an animation that will ensure that when
