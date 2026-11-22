@@ -1,3 +1,15 @@
+## Pull-to-refresh: no more double indicator on iPhone (Base44 checkpoint 6b02a9f2b8f1bab5681b2c41)
+
+> Check the pull to refresh it appears in doubles on iphone
+
+- Cause: My Shifts (carers) wraps its page in its own `PullToRefresh`, and it is rendered inside the Shifts tab
+  panel, which has one too. One pull showed two "Pull to refresh" indicators and ran both refreshes.
+- Fix (`PullToRefresh.jsx`): only the outermost instance is live. It provides a context; a nested instance just
+  renders its content. The outer refresh re-fetches every active query, which covers the inner one's refetches.
+- Reproduced on an emulated iPhone 14 with real touch input. Before: 2 indicators visible during the pull and 2
+  refreshes (outer 1, inner 1). After: 1 indicator, 1 refresh.
+- `verify-android-scroll` now 8 checks. verify:all and the build pass.
+
 ## Android scrolling fixed (Base44 checkpoint 6b02a2f6c91419eb2be2bc49)
 
 > Some android users are reporting scrolling issues
