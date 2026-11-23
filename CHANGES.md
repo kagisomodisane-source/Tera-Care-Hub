@@ -1,3 +1,44 @@
+## Company cars: car register, per-car figures, receipt storage choice and filed PDF records (Base44 checkpoint 6b04c15484f6e2c4f27d8715)
+
+> In the mileage claim allow staff to pick a car via drop down in the registration window and allow admins to add car
+> details in settings, allow each car registration to maintain its own mileage readings, expenses and calculation.
+> In settings allow admin to choose where uploaded receipts will be saved, e.g. cloud via link or local storage, and
+> create a PDF with all details and receipt image that will be stored immediately in the designated folder.
+
+**Car register (Settings › Vehicles, admins).** New `CompanyVehicle` entity: registration, make, model, colour, year,
+fuel, current odometer, MOT / insurance / tax / service due dates (badges turn amber within 30 days, red when overdue),
+notes, In use / Retired. Retired cars leave the staff drop-down but keep their history. Registrations are matched with
+spaces and case ignored, because the existing logs had the one car typed three ways (CA59 HZV, CA 59 HZV, CA59HZV).
+That car was added to the register so its history shows straight away; make, model and due dates are still blank.
+
+**Staff log (My Mileage Claims › company car).**
+- The free-text Registration box is now a **Car** drop-down of active cars. With no cars yet, admins get a link to
+  Settings › Vehicles and staff are told to ask an admin.
+- **Per-car figures** for the chosen car, across all drivers: miles logged, last odometer reading, fuel spend,
+  mpg, fuel cost per mile, and this month's miles and spend. A new `companyCarRecords` backend function supplies them,
+  because staff can only read their own logs; it returns figures only, never other drivers' trips.
+- **Start mileage** fills in from the car's last reading, with a warning if the entry is lower.
+- Shows price per litre and cost per mile as the trip is typed.
+- The usage list can be filtered by car. Each log shows its PDF record, a Filing… state, or Retry.
+
+**Where receipts are saved (Settings › Vehicles, admins).** Choose:
+- **Cloud (OneDrive/SharePoint)**, by folder path in the connected OneDrive (missing folders are created), or by
+  pasting a folder share link;
+- **Wellstride storage**, the app's own file storage.
+
+"Check & save" proves the folder can be reached before saving. The default stays the old folder,
+TERA HEALTHCARE/RECEIPTS/fuel & vehicle.
+
+**PDF record, filed immediately.** Every submitted or updated log calls `companyCarRecords` › `file_log`. It builds an
+A4 PDF with the vehicle, journey, odometer, miles, fuel, price per litre, cost per mile, the car's figures to date,
+condition and notes, then each receipt photo on its own page; PDF receipts are appended page for page. The PDF goes to
+the chosen destination in a sub-folder per car (for OneDrive, the original receipt files are saved alongside). If
+OneDrive cannot be reached, the PDF is kept in Wellstride storage and the log says so, so a record is never lost.
+Only the driver or a manager/admin can file a log, and only this app's uploaded files are fetched.
+
+New `scripts/verify-company-cars.mjs` (26 checks) is in verify:all. verify:all and build pass. The PDF builder was
+tested with JPEG, PNG and PDF receipts.
+
 ## Chat messages now reach phones with the app closed (Base44 checkpoint 6b0466f10400dc5bc8190443)
 
 > Check the message and chat alerts they are not appearing on the mobile phone unless the user goes into the app
