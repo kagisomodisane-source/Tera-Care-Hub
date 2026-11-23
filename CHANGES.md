@@ -1,3 +1,27 @@
+## Chat messages now reach phones with the app closed (Base44 checkpoint 6b0466f10400dc5bc8190443)
+
+> Check the message and chat alerts they are not appearing on the mobile phone unless the user goes into the app
+
+**Root cause.** `chatMessageAction` (`send`) saved the message and updated the room preview, and stopped there.
+No push was ever sent for chat. The only alert was the live subscription inside the open app (toast, sound,
+badge), so a phone with Wellstride closed or in the background stayed silent until the person opened the app.
+Other alerts (tasks, reviews, shift changes) were unaffected: they go through the Notification → "Push new
+notifications" workflow fixed on 20-11-2026.
+
+**Fix.** After a message is saved, `pushChatMessage` sends a push through `notificationService` to every other
+participant in the room:
+- skips the sender and anyone who muted the room;
+- title is the sender (plus the group name for group chats), body is the message preview, or "Sent a photo/file";
+- tapping it opens that conversation (`/Chat?chatRoomId=…`);
+- one notification per room (`tag: chat-<room>`), so a burst of messages updates one alert instead of stacking;
+- respects each person's message-notification preferences and quiet hours; messages sent as Urgent get through
+  quiet hours;
+- push only, no Notification record (chat already has its own unread badges);
+- authorised as a backend job (automation secret, service role), so carers' messages push to other carers too;
+- a push failure is logged and never fails the send.
+
+`verify-push-alerts`: 4 new checks (19/19). verify:all and build pass.
+
 ## Write Visit Note while clocked in: opens the editor and resumes the draft (Base44 checkpoint 6b030fbe1430b35902c880a2)
 
 > The write visit note feature seems to have a bug primarily when you're still clocked in, it's not allowing staff to write notes
