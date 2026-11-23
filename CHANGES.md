@@ -1,3 +1,16 @@
+## Company car PDFs: receipt photos now embedded (Base44 checkpoint 6b04c8fff4e5f42eb0060ad1)
+
+> yes check (watch the first real company car log)
+
+The first real log (23-11-2026, 23:04) was filed to OneDrive, but its PDF was only 12 KB: the receipt photo was
+missing. Uploaded files on base44.app answer with a 302 redirect to media.base44.com, and `fetchReceipt` refused all
+redirects (`redirect: 'error'`), so every receipt was listed as "could not be embedded".
+
+Fix: follow up to 3 redirects by hand, re-checking each hop is still this app's own storage. Tested against the real
+receipt: a 2.5 MB JPEG now downloads and is embedded. A link outside the app's storage is still refused. That log was
+set to "Filing failed — retry" so tapping Retry rebuilds the PDF with the photo; the new file has the same name and
+replaces the old one in OneDrive. One new check, verify-company-cars 27/27. verify:all and build pass.
+
 ## Company cars: car register, per-car figures, receipt storage choice and filed PDF records (Base44 checkpoint 6b04c15484f6e2c4f27d8715)
 
 > In the mileage claim allow staff to pick a car via drop down in the registration window and allow admins to add car
