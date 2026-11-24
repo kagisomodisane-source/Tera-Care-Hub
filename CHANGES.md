@@ -1,3 +1,28 @@
+## Client portal: double-handed visits show as one note (Base44 checkpoint 6b053588b70c0058278c05c4)
+
+> in the client portal where there are two visit notes for the same client and same time, combine into a single note
+
+**Why there were two:** on double-handed visits, two carers attend together. Each has their own shift and writes their
+own note: same client, same day, same start and end time. In the latest 300 notes there were 113 such pairs, so family
+members read most visits twice.
+
+**Now:** the portal's Visit Notes list and Home screen show one entry per visit (new pure helper
+`src/components/portal/combineVisitNotes.js`).
+- **Matching:** notes join when they share the visit date and start time (HH:mm, so "7:00" equals "07:00:00"). A note
+  with no start time is never merged.
+- **Header:** names both carers ("Carer A & Carer B · 15:30 – 16:00 · Personal care") with a small "2 carers attended
+  — their notes are combined" line.
+- **Text:** each carer's words appear under their name; identical text is shown once with both names.
+- **Moods and wellbeing:** distinct moods and statuses are all shown; tasks are merged without repeats.
+- **PDFs:** each carer's PDF is still downloadable, labelled by first name.
+- **Home:** the visit count and "Latest wellbeing update" count a double-handed visit once, and the update names both
+  carers.
+
+Unchanged: the server still sends every note, so permissions, approval and the note window are untouched. The Wellbeing
+and Medication views still list per note.
+
+New `scripts/verify-portal-combined-notes.mjs` (12 checks) is in verify:all. verify:all and build pass.
+
 ## Admin visit-note badge and dashboard counts (Base44 checkpoint 6b0508d1815b84e4c74b7ddf)
 
 > admin page badges for visit notes may have a bug, check for me
