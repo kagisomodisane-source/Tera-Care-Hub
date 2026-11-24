@@ -1,3 +1,38 @@
+## Client portal: Wellbeing and Medication count a double-handed visit once, and redesigned (Base44 checkpoint 6b0538fddebe030a6a314c9a)
+
+> yes combine wellbeing and medication too and improve the UX
+
+**Counting bugs fixed:**
+- **Fluids were doubled.** Both carers on a double-handed visit record the same drinks, and the day added both, so
+  200 ml showed as 400 ml. A visit now counts once: mood is the carers' average, and fluids are the larger of their
+  two records. Visits are then added up into the day.
+- **Doses were listed and counted twice.** A dose is now matched on day, visit, medicine, dosage and due time, and
+  shown once with both carers named. If either carer recorded it as given, it shows as given. Otherwise the more
+  definite answer wins (not given > not due > not recorded), and the reason is kept.
+- **Server:** `getClientPortalData` now tags wellbeing and medication rows with `visit` (start time) and medication rows
+  with `by` (carer). Older rows with no visit time are treated as separate visits, as before.
+
+**Wellbeing tab:**
+- 7 days / 14 days / All picker (defaults to 14 when there is more).
+- Four tiles: usual mood with emoji and trend (Improving / Steady / Dipping lately), fluids a day, days with visits
+  (and the visit count), and lower-mood days.
+- Mood chart with an emoji scale; low-mood days are drawn amber.
+- The fluids chart says double-handed drinks count once.
+- "Day by day" list (mood emoji, fluids, number of visits) replaces the hidden table.
+
+**Medication tab:**
+- Adherence card with a progress bar and %.
+- **By day / By medicine** switch, plus a **Not given only** filter.
+- By day: doses grouped by visit ("Morning visit · 07:00 · Carer A & Carer B"). Each day header shows "N not given".
+  The 5 most recent days show first, with older days behind a button.
+- By medicine: given of due per medicine with a bar; medicines with missed doses sort first, with "Last not given
+  dd/MM — reason".
+- "Reason: Not needed" no longer repeats the Not needed label.
+
+**Checks:** 11 new checks in verify-portal-combined-notes (23/23). verify-portal-fixes was updated to the renamed
+variable; the same rule still holds. Rendered with realistic double-handed data (14 days, 2 carers per visit): fluids
+showed 800 ml a day (would have been 1,600), and 39 due doses were counted once. verify:all and build pass.
+
 ## Client portal: double-handed visits show as one note (Base44 checkpoint 6b053588b70c0058278c05c4)
 
 > in the client portal where there are two visit notes for the same client and same time, combine into a single note
