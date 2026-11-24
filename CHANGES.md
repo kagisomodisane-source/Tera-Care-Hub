@@ -1,3 +1,22 @@
+## Admin visit-note badge and dashboard counts (Base44 checkpoint 6b0508d1815b84e4c74b7ddf)
+
+> admin page badges for visit notes may have a bug, check for me
+
+**What was wrong (live data, 24-11-2026):** the admin Visit Notes badge showed **11**, but the review page had **1**
+note waiting (a draft from 23-11).
+
+1. **The badge counted archived notes.** These are drafts the system set aside once the real note was submitted. The
+   page hides them; the badge didn't, which added 10.
+2. **Drafts were only checked against other unreviewed notes.** A draft whose submitted note had already been reviewed
+   still counted. The badge now looks up every note on that draft's shift.
+3. **The Dashboard's "Pending reviews" counted archived and resident notes the same way.**
+4. **The Dashboard anomaly panel flagged false "Missing Visit Note" alerts.** It was given only *unreviewed* notes, so
+   every completed shift whose note had already been reviewed looked like it had no note. The Dashboard now loads the
+   500 most recent notes in every state, and works out pending reviews with the review page's rules: not archived, not
+   a resident note, and a draft only when its shift has no submitted note.
+
+Four new checks in verify-scan-2411 (9/9). verify:all and build pass.
+
 ## Bug scan, 24-11-2026 (Base44 checkpoint 6b05014d181a166bab338574)
 
 > scan app for bugs
