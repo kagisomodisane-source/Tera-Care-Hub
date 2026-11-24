@@ -1,3 +1,36 @@
+## Bug scan, 24-11-2026 (Base44 checkpoint 6b05014d181a166bab338574)
+
+> scan app for bugs
+
+**How it was scanned:** lint (style only: unused imports and 12 direct entity calls, no runtime errors); live backend
+logs for the busiest functions; a cross-check that every backend function and entity the code calls actually exists;
+stuck data (clocked-in shifts, failing push subscriptions, notification volume); and unguarded number and date
+formatting on high-traffic pages.
+
+**Fixed:**
+1. **Leave decisions never reached staff.** LeaveManagement approve/reject called `notifyLeaveRequestStatus`, a backend
+   function that has never existed in this repo. Every decision showed managers "Leave approved but notification
+   failed to send", and the staff member got nothing. It now sends through `notificationService` (in-app + phone push,
+   opens My Leave Requests): "Your annual leave request for 01-12-2026 to 05-12-2026 was approved by …", plus the
+   manager's note. A decline is sent as high priority. One decision in the last month (16-11-2026) went out silently.
+2. **Payslips silently used £11.44/hour** when a staff profile had no hourly rate. That is below the National Living
+   Wage (£12.71 from 1 April 2026), and 7 current accounts have no rate. `generatePayslip` now refuses with "No hourly
+   rate is set for … Add it on their Staff profile", the same rule invoices already follow. The new-staff form now
+   defaults to £12.71.
+3. **Mileage Approval could blank the page** if a claim or expense line had no amount (`x.toFixed` on undefined).
+   Amounts are now read as numbers with 0 as the fallback. There is no bad data today; this is a guard.
+
+**Checked, not bugs:**
+- clockShift "rate limit" log lines are a caught settings read; clock-ins succeeded.
+- Notification volume is normal for this app (bursty).
+- Nothing is stuck clocked in.
+- One push subscription from April is malformed and is already skipped.
+- Every optional date that goes through `format(parseISO())` is guarded.
+- `EmploymentContract` (missing entity) is caught in the payslip code.
+
+New `scripts/verify-scan-2411.mjs` is in verify:all. Its generic check that every `functions.invoke('X')` has a
+`base44/functions/X` would have caught bug 1. verify:all and build pass.
+
 ## Company car PDFs: receipt photos now embedded (Base44 checkpoint 6b04c8fff4e5f42eb0060ad1)
 
 > yes check (watch the first real company car log)
