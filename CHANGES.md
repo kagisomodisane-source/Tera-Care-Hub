@@ -1,3 +1,30 @@
+## Client portal: the person's name on organisation accounts, and a wider page on large monitors (Base44 checkpoint 6b07674a6c57b6cb10ebdfc9)
+
+> BOTH (show the person's name on organisation accounts; use more of a wide monitor)
+
+**1. The person, not the account name.** Some clients are organisation accounts holding one person's care. The family
+portal said "MCCS" in the header, "About MCCS" and "the latest on MCCS's care" about their own relative.
+
+The new `src/components/portal/portalNames.js` reads the person's name from the active care plan's title:
+"Roy McFruin Daily Support Plan" → "Roy McFruin".
+- **How it reads the title:** it stops at the first plan word (Daily, Care, Support, Person-Centred, Plan, …),
+  needs 2–4 capitalised words, and drops a trailing "'s".
+- **Where it is used:** the header (with "MCCS · Family & Client Portal · …" kept underneath), the Home greeting and
+  the About panel.
+- **When it falls back:** if no name can be read safely, or the person may not see the care plan, the account name is
+  used as before.
+- **Individual clients:** unchanged.
+
+**2. Large monitors (2xl, 1536 px and up).**
+- The page grows to 1,600 px (it was 1,280).
+- Home uses three columns: the wellbeing card takes two and Next visit one.
+- The section tiles sit in one row.
+
+Laptops and phones are unchanged.
+
+Five new checks (verify-portal-combined-notes 33/33), including titles that must not produce a name. verify:all and
+build pass.
+
 ## Client portal: proper desktop layout (Base44 checkpoint 6b075d88df89417440ef6811)
 
 > I'm viewing the client portal on a desktop and it's appearing in mobile view
