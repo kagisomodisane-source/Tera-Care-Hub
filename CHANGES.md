@@ -1,3 +1,34 @@
+## Client portal: Medication becomes its own section; wellbeing moves into the home card (Base44 checkpoint 6b075947e9644359575074d2)
+
+> 1: make the medication feature a stand-alone on the home page like invoices and reports and remove the tab in the
+> visit notes page. 2: incorporate the features of the wellbeing tab into the "latest wellbeing update" widget on the
+> home page, then remove the tab in the visit notes page
+
+**1. Medication is now a portal section**, next to Visit Notes in the header menu and on the home tiles like Reports
+and Invoices.
+- **Home tile:** reads "97% of due doses given · 1 not given" instead of a plain count.
+- **Permission:** it has `follows: "visit-notes"` in `portalTabs.js`, so it is shown to exactly the people allowed to
+  read visit notes. That is the same rule as before, because the server builds it only from those notes. There is no
+  new permission to set. The admin hint for Visit Notes now says it includes "the medication and wellbeing they
+  record".
+
+**2. Wellbeing is part of the home card.** The "Latest wellbeing update" card (new `PortalWellbeingCard.jsx`) keeps
+the latest update, now with combined double-handed visits: both carers' moods and words. Below it, for the last 14
+days, it adds:
+- usual mood with its trend, fluids a day, and lower-mood days;
+- a mood-by-day chart with low days in amber;
+- the lower-mood note;
+- a collapsible "Day by day" list (mood, fluids, visits);
+- a "Read the visit notes" link.
+
+The home top row is now a 3:2 split (wellbeing : next visit) on wider screens.
+
+**Visit Notes** is now just the notes; the Notes / Wellbeing / Medication switcher is gone. `PortalWellbeing.jsx` was
+deleted (its view lives in the card); `PortalMedication.jsx` is the new section.
+
+**Checks:** four new checks (verify-portal-combined-notes 27/27). portal-access 183/183, portal-fixes 53/53 and
+no-dead-code pass. verify:all and build pass. The card was rendered at phone and desktop widths with two-carer data.
+
 ## Client portal: Wellbeing and Medication count a double-handed visit once, and redesigned (Base44 checkpoint 6b0538fddebe030a6a314c9a)
 
 > yes combine wellbeing and medication too and improve the UX
