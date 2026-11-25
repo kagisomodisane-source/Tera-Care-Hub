@@ -1,3 +1,21 @@
+## Client portal Medication: latest day open, the rest collapsed (Base44 checkpoint 6b076ea4d43d9224a07ea13d)
+
+> in the medication page only leave the current date's medication view open and collapse the rest
+
+In "By day", only the most recent day starts open; it is labelled **Latest**. Every other day is a one-line row you
+can tap to open:
+- the date;
+- "2 visits · 3 of 3 due given";
+- a chevron.
+
+A missed dose is never hidden in a closed row: the row shows an amber "N not given" badge, or a green "All due given"
+when every due dose was given (neither when nothing was due). Several days can be open at once.
+
+Because collapsed rows are short, 14 days show before "Show older days" (it was 5).
+
+One new check (verify-portal-combined-notes 34/34). verify:all and build pass. Rendered with six days of two-carer
+data.
+
 ## Client portal: the person's name on organisation accounts, and a wider page on large monitors (Base44 checkpoint 6b07674a6c57b6cb10ebdfc9)
 
 > BOTH (show the person's name on organisation accounts; use more of a wide monitor)
