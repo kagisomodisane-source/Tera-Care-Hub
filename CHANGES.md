@@ -1,3 +1,22 @@
+## Client portal: proper desktop layout (Base44 checkpoint 6b075d88df89417440ef6811)
+
+> I'm viewing the client portal on a desktop and it's appearing in mobile view
+
+**Cause:** the portal was designed phone-first and had no desktop layout. It was one column capped at max-w-5xl,
+with the scrolling pill row of sections in the header at every screen size, so on a monitor it looked like the mobile
+app.
+
+**Now, from `lg` (1024 px) up:**
+- Sections are in a left sidebar (icon + label, active one highlighted, sticky while scrolling) instead of the pill
+  row.
+- The page widens to max-w-7xl, with the header aligned to it.
+- Each section opens under its own heading (icon + name).
+- The home page uses the extra width: wellbeing card and next visit side by side, as before.
+
+Phones and tablets are unchanged: the pill row still shows below `lg`.
+
+Two new checks (verify-portal-combined-notes 29/29). verify:all and build pass.
+
 ## Client portal: Medication becomes its own section; wellbeing moves into the home card (Base44 checkpoint 6b075947e9644359575074d2)
 
 > 1: make the medication feature a stand-alone on the home page like invoices and reports and remove the tab in the
