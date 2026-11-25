@@ -1,3 +1,27 @@
+## Client portal: Visit Notes and Medication fold older days into a grid (Base44 checkpoint 6b077167d362d80a667b9389)
+
+> 1: do the same for the visit notes page, 2: on both pages show the collapsed in a grid format with at least two side
+> by side depending on screen size
+
+**Visit Notes:**
+- Visits are grouped by day. The latest day is shown open ("Latest") with its full note cards.
+- Older days sit under "Earlier days" as folded cards showing:
+  - a short date, e.g. "Tue 24/11/2026";
+  - the number of visits and the carers;
+  - the moods recorded;
+  - an amber "Worth a read" flag and border when any visit recorded a low or distressed mood, or a wellbeing concern
+    (deteriorated / urgent attention), so nothing worrying is hidden in a closed card.
+
+**Both pages:**
+- Folded days are laid out two side by side on every screen, phones included, and three from xl (1280 px).
+- The latest day spans the full width.
+- An opened older day expands to the full row, so its notes or doses have room.
+- Folded card contents are stacked (date and chevron, then summary, then badge) so they still read at half a phone
+  width. The first preview showed a one-line header crushing the text at narrow widths; stacking fixes that.
+
+Checks updated (verify-portal-combined-notes 36/36). verify:all and build pass. Rendered at 390 px (phone) and
+1,100 px.
+
 ## Client portal Medication: latest day open, the rest collapsed (Base44 checkpoint 6b076ea4d43d9224a07ea13d)
 
 > in the medication page only leave the current date's medication view open and collapse the rest
