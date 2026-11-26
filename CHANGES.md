@@ -1,3 +1,26 @@
+## Client portal: Reports fold older weeks into a grid; every section opens at the top (Base44 checkpoint 6b0777053b776a4f4e09b64d)
+
+> do the same for the reports page and make all pages show the top of page when opened
+
+**Reports:**
+- The newest report is shown open at full width ("Most recent report · Latest"). Its summary and the "View full
+  report" button work as before.
+- Older weeks sit under "Earlier weeks" in the same grid: two side by side on every screen, three from xl.
+- Each folded week shows its dates, the first two lines of the wellbeing summary, and an amber "N concerns noted" badge
+  and border when concerns or incidents were recorded.
+- Opening a week shows the full report across the row, with a "Fold" link back.
+
+**Opening at the top.** Switching section in the portal (sidebar, pill row or home tiles) left you wherever the last
+section was scrolled to.
+- **Cause:** `scrollAppToTop` / `scrollAppToTopOnNavigation` in `appScroller.js` find the app shell's scroller (the tab
+  panel or `<main>`). The portal is a standalone page outside the shell: its `<main>` is an ordinary block and the
+  browser window does the scrolling, so the "scroll to top" moved an element that never scrolls.
+- **Fix:** both helpers now also reset `document.scrollingElement`. Inside the shell the document never scrolls, so
+  this changes nothing there.
+- **Staff app:** bottom-tab panels still remember their own position, as before.
+
+Checks: two new ones (verify-portal-combined-notes 38/38); verify-app-scroll 25/25. verify:all and build pass.
+
 ## Client portal: Visit Notes and Medication fold older days into a grid (Base44 checkpoint 6b077167d362d80a667b9389)
 
 > 1: do the same for the visit notes page, 2: on both pages show the collapsed in a grid format with at least two side
