@@ -1,3 +1,43 @@
+## Sign-in glitches in the staff app and the client portal (Base44 checkpoint 6b07c4ef7522a07bebef95f4)
+
+> I'm having some log in glitches, find bugs for both main app and client portal which I suspect both might have a clash
+
+**Root mistake shared by both:** the Base44 SDK rejects with a `Base44Error` whose HTTP status is `err.status`; there
+is no `err.response`. Code reading `err.response.status` never saw a 401.
+
+1. **Portal: an expired session showed an error panel instead of sign-in.** `ClientPortal` checked
+   `userError.response.status`, so "signed out" was never recognised. A phone waking with an expired session retried,
+   then showed "couldn't check you". It now reads `err.status`, so a signed-out person goes to sign-in, and a 401 is
+   not retried.
+
+2. **Staff app: any hiccup while loading the user showed "Unable to authenticate. Please refresh or sign in again",**
+   and nothing retried, even when the session was fine and the phone was just waking.
+   - Now a network blip is retried twice (after 1.5 s, then 3 s).
+   - A genuine 401/403 goes straight to sign-in.
+   - Rate limiting is handled as before.
+
+3. **The clash: representatives briefly got the staff app.** Layout only learnt someone was a representative from the
+   invitation query, after it had started rendering the staff dashboard. So a family member signing in saw the staff
+   app flash, with its staff queries and errors, before being moved to the portal. Accounts with no staff role now see
+   the loading screen until that one query answers, then "Opening your portal…" while they are moved. Staff, admins
+   and managers do not wait. The wait is skipped offline, so it can never hang.
+
+4. **The clash, other way round: a carer who is also somebody's relative was locked into the portal.** Any invitation,
+   even a revoked one, sent a non-manager to the portal with no way back to their rota. Accounts with a staff `app_role`
+   now stay in the staff app, and can still open /ClientPortal. All current invitations are portal-only accounts, so
+   nobody was affected yet.
+
+5. **Master logout threw out people who signed in after it.** The check compared the last master-logout time *this
+   device* had seen. A device that was closed or signed out during a master logout signed in fresh and was thrown out
+   again about 1.5 s later. All three checks now also require the session's own sign-in time (the access token's
+   `iat`) to be earlier than the master logout. If the token can't be read, the old rule applies.
+
+New `scripts/verify-sign-in.mjs` (7 checks) is in verify:all. portal-access 183/183 and shell-layout 30/30 still pass.
+verify:all and build pass.
+
+**Same `err.response.status` mistake, not on the sign-in path, left as is:** TimeCorrectionQueue 409,
+PendingAccessRequests 403, the resident-notes 403 message, and chat rate-limit retries.
+
 ## Client portal: the visit-note window is now 4 weeks (was 8) (Base44 checkpoint 6b077f08c87a221effbe1066)
 
 > change the 8 weeks code and protocol to 4 weeks
