@@ -1,3 +1,16 @@
+## Client portal Reports: folded weeks are all the same size (Base44 checkpoint 6b077b30e66cdecccf21766a)
+
+> in the mobile reports page make a standard size collapse window/tab length uniform
+
+Folded weekly-report cards varied in height with the length of the summary and whether a concerns badge was shown.
+Every folded card now has the same fixed rows:
+- **Dates:** one line, written short ("24 Nov – 30 Nov") so they fit half a 360 px phone. The full dates are in the
+  tooltip.
+- **Summary:** always a two-line area, filled or not.
+- **Badge row:** always present, showing either "N concerns noted" or "Tap to read".
+
+The grid stretches cards in each row as well. verify:all and build pass.
+
 ## Client portal: Reports fold older weeks into a grid; every section opens at the top (Base44 checkpoint 6b0777053b776a4f4e09b64d)
 
 > do the same for the reports page and make all pages show the top of page when opened
