@@ -1,3 +1,24 @@
+## Client portal: the visit-note window is now 4 weeks (was 8) (Base44 checkpoint 6b077f08c87a221effbe1066)
+
+> change the 8 weeks code and protocol to 4 weeks
+
+**Code:**
+- `NOTE_WINDOW_WEEKS` is 4 in `getClientPortalData`, the portal's notes, medication and wellbeing.
+- It is also 4 in `generateVisitNotePdf`, the check that a representative may download a note's PDF. The two must
+  match; verify-portal-access checks they do (183/183).
+- The portal's fallback, shown before the server answers, is 4.
+
+**Protocol text:**
+- External Access: "as far back as the portal's 4-week window reaches".
+- The manager's day-request panel: "older than the portal's 4-week window".
+- The portal itself reads the value from the server ("Showing the last 4 weeks, from …").
+
+**Effect:** families and representatives now see reviewed notes from the last 4 weeks. Days 4–8 weeks old drop out
+unless already approved on request, and the existing request flow covers them. CQC inspector access is unaffected:
+it is not limited to approved notes.
+
+verify:all and build pass.
+
 ## Client portal Reports: folded weeks are all the same size (Base44 checkpoint 6b077b30e66cdecccf21766a)
 
 > in the mobile reports page make a standard size collapse window/tab length uniform
