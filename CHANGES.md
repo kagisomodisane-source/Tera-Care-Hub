@@ -1,3 +1,32 @@
+## Field hints fit on a phone (Base44 checkpoint 6b0909ee82911ce45a1c2a72)
+
+> [screenshot: Skin Integrity Assessment dialog with keyboard open] Check pages like this one
+
+The screenshot showed the keyboard fix working: the dialog fitted above the keyboard and the field was visible. It also
+showed the field's hint cut off mid-word ("e.g., Moisturizer, Barrier cream — press Enter to a…").
+
+**Fix:** every single-line field hint over 38 characters in the visit-note screens and in staff dialogs was shortened,
+18 in total. Instructions are kept short or already sit in the helper line underneath, for example "Type a product and
+press Enter or comma to add it".
+
+**Visit-note dialogs:**
+- skin care products → "e.g., Barrier cream";
+- activities → "e.g., Reading, TV";
+- dressing, cream applied;
+- medication reason and notes;
+- seizure signs;
+- communication-log contact and topic;
+- tasks done ("use commas");
+- resident search;
+- visit-note filter search.
+
+**Other dialogs:** task title, care-plan question, mileage purpose, timesheet activity, scanned-document search.
+
+Multi-line note boxes wrap their hints, so they are unchanged.
+
+New `scripts/verify-field-hints.mjs` is in verify:all and fails on any single-line hint over 38 characters in those
+screens. verify:all and build pass.
+
 ## Staff app keyboard: the field being typed in no longer jumps and hides (Base44 checkpoint 6b0903be0c06f943c513fc0c)
 
 > In the staff app when inputting text, the text window jumps and hides; ensure when the keyboard is present the
