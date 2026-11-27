@@ -1,3 +1,30 @@
+## Staff app keyboard: the field being typed in no longer jumps and hides (Base44 checkpoint 6b0903be0c06f943c513fc0c)
+
+> In the staff app when inputting text, the text window jumps and hides; ensure when the keyboard is present the
+> selected text window is visible
+
+**Cause:** three parts of `keyboardAware.js` fought each other.
+1. **Moves chained.** Every visual-viewport scroll re-ran the positioning. That included iOS's own scroll to show the
+   caret, and the scroll the module had just caused itself.
+2. **Moves overshot.** They were smooth (animated) and were measured again mid-animation, then applied on top, so the
+   field overshot up under the header.
+3. **Dialogs bounced.** `--vv-top` / `--vv-h` were rewritten on every scroll frame, so dialogs re-centred
+   continuously, taking the field inside them along.
+
+**Fix:**
+- Positioning waits until the viewport has been still for 160 ms, then measures once and moves once, instantly and
+  exactly (`scrollTop += shift`).
+- Viewport movement in the 400 ms after our own move is ignored.
+- The dialog variables only change when the visible area settles at a new size or position.
+- Opening and closing the keyboard still applies at once, so the bottom bars slide away straight away.
+- Growing text boxes still keep their last line in view, instantly and only when it has actually slipped out.
+
+**Checked with a simulated iPhone sequence:** 10 keyboard resize events with iOS panning, then 5 echo scrolls. The
+field moved exactly once (166 px), its bottom landed exactly 16 px above the keyboard, the echoes caused no second
+move, and the field stayed clear of the header.
+
+Checks: two new ones (verify-android-scroll 16/16). verify:all and build pass.
+
 ## Sign-in glitches in the staff app and the client portal (Base44 checkpoint 6b07c4ef7522a07bebef95f4)
 
 > I'm having some log in glitches, find bugs for both main app and client portal which I suspect both might have a clash
