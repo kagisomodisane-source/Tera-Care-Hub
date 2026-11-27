@@ -1,3 +1,12 @@
+## 27-11-2026 — iPhone home-screen app: dialog fields stay above the keyboard
+
+- Pop-up dialogs no longer re-centre on the shrunken screen while the keyboard is up. They pin to the top of the visible area, which leaves the most room above the keyboard. The 0.26 s slide animation is gone, so a field is never measured mid-animation (`src/index.css`).
+- `keyboardAware.js`:
+  - While the lock is on (just after the app moves a field), nothing is repositioned. Once it ends, the app measures again.
+  - If iOS panned again in response, the app corrects it, up to 4 times per field.
+- `verify-android-scroll`: 17 checks, all passing. All checks and the build pass.
+- Checkpoint 6b090fb3d3a1134e361ab044, published.
+
 ## Field hints fit on a phone (Base44 checkpoint 6b0909ee82911ce45a1c2a72)
 
 > [screenshot: Skin Integrity Assessment dialog with keyboard open] Check pages like this one
